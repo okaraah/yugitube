@@ -1,0 +1,32 @@
+{
+  "name": "yugitube",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Minimal browserless DuelingBook login client.",
+  "scripts": {
+    "ingest:duel-log": "tsx src/ingest-duel-log.ts",
+    "parse:duel": "tsx src/parse-duel-log.ts",
+    "login": "tsx src/login.ts",
+    "probe:ws": "tsx src/probe-websocket.ts",
+    "record:duel": "tsx src/record-duel.ts",
+    "scrape:supervisor": "tsx src/scrape-supervisor.ts",
+    "sync:cards": "tsx src/sync-cards.ts",
+    "web": "tsx src/web.ts",
+    "watch:ws": "tsx src/watch-websocket.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "ws": "^8.18.3"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2"
+  }
+}

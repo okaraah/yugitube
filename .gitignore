@@ -1,0 +1,13 @@
+node_modules
+.DS_Store
+# Keep environment variables out of version control
+.env
+.env.local
+.env.*
+!.env.example
+
+.next
+data
+generated
+.runtime
+dist
