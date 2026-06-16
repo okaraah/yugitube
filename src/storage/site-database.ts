@@ -164,6 +164,124 @@ export class SiteDatabase {
 
   async init() {
     await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS scraper_accounts (
+        username TEXT PRIMARY KEY,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        last_status TEXT,
+        last_error TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS scraper_runs (
+        id SERIAL PRIMARY KEY,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        status TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS worker_sessions (
+        id SERIAL PRIMARY KEY,
+        run_id INTEGER NOT NULL,
+        account_username TEXT NOT NULL,
+        state TEXT NOT NULL,
+        current_duel_id INTEGER,
+        last_error TEXT,
+        started_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS scraper_config (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS cards_catalog (
+        card_id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        treated_as TEXT,
+        card_type TEXT,
+        attribute TEXT,
+        type_line TEXT,
+        raw_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS duels (
+        duel_id INTEGER PRIMARY KEY,
+        assigned_account TEXT NOT NULL,
+        status TEXT NOT NULL,
+        winner TEXT,
+        loser TEXT,
+        final_score TEXT,
+        games_played INTEGER NOT NULL DEFAULT 0,
+        replay_url TEXT,
+        raw_log_path TEXT,
+        started_at TEXT,
+        completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS duel_summaries (
+        duel_id INTEGER PRIMARY KEY,
+        winner TEXT,
+        loser TEXT,
+        final_score TEXT,
+        games_played INTEGER NOT NULL,
+        turns_observed INTEGER NOT NULL,
+        total_packets INTEGER NOT NULL,
+        real_plays INTEGER NOT NULL,
+        probable_archetypes_json TEXT NOT NULL,
+        summary_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS duel_games (
+        duel_id INTEGER NOT NULL,
+        game_number INTEGER NOT NULL,
+        score_at_start TEXT NOT NULL,
+        starting_player TEXT,
+        winner TEXT,
+        loser TEXT,
+        ended_match INTEGER NOT NULL,
+        total_packets INTEGER NOT NULL,
+        real_plays INTEGER NOT NULL,
+        raw_json TEXT NOT NULL,
+        PRIMARY KEY (duel_id, game_number)
+      );
+
+      CREATE TABLE IF NOT EXISTS duel_player_summaries (
+        duel_id INTEGER NOT NULL,
+        username TEXT NOT NULL,
+        won INTEGER NOT NULL,
+        probable_archetype TEXT,
+        unique_cards_count INTEGER NOT NULL,
+        real_plays INTEGER NOT NULL,
+        raw_json TEXT NOT NULL,
+        PRIMARY KEY (duel_id, username)
+      );
+
+      CREATE TABLE IF NOT EXISTS duel_seen_cards (
+        duel_id INTEGER NOT NULL,
+        username TEXT NOT NULL,
+        card_name TEXT NOT NULL,
+        total_count INTEGER NOT NULL,
+        actions_json TEXT NOT NULL,
+        PRIMARY KEY (duel_id, username, card_name)
+      );
+
+      CREATE TABLE IF NOT EXISTS duel_play_packets (
+        duel_id INTEGER NOT NULL,
+        sequence INTEGER NOT NULL,
+        play TEXT NOT NULL,
+        username TEXT,
+        seconds INTEGER,
+        over_flag INTEGER NOT NULL DEFAULT 0,
+        packet_json TEXT NOT NULL,
+        PRIMARY KEY (duel_id, sequence)
+      );
+
       CREATE TABLE IF NOT EXISTS duel_site_data (
         duel_id INTEGER PRIMARY KEY,
         duration_seconds INTEGER NOT NULL DEFAULT 0,
