@@ -15,7 +15,6 @@
     "record:duel": "tsx src/record-duel.ts",
     "scrape:supervisor": "tsx src/scrape-supervisor.ts",
     "sync:cards": "tsx src/sync-cards.ts",
-    "web": "tsx src/web.ts",
     "watch:ws": "tsx src/watch-websocket.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.client.json --noEmit"
   },
@@ -36,7 +35,6 @@
     "ws": "^8.18.3"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1068.0",
     "@formkit/auto-animate": "^0.9.0",
     "dotenv": "^17.4.2",
     "pg": "^8.21.0",

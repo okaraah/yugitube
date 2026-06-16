@@ -3,7 +3,6 @@ import { URL } from "node:url";
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-import { YgoProDeckImageCache } from "../src/cards/ygoprodeck-image-cache.js";
 import { SiteDatabase, type ArchetypeGroupInput, type ReplayListResult, type ReplayPlayerArchetypeMatch } from "../src/storage/site-database.js";
 
 const ADMIN_COOKIE_NAME = "yugitube_admin_session";
@@ -12,7 +11,6 @@ const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 14;
 // Global singletons (preserved across warm starts)
 const db = new SiteDatabase();
 let dbInitPromise: Promise<void> | null = null;
-const imageCache = new YgoProDeckImageCache();
 
 function signSession(sessionId: string, secret: string) {
   return createHmac("sha256", secret).update(sessionId).digest("hex");
@@ -56,16 +54,13 @@ function toReplayArchetypesWithImages(
   }));
 }
 
-async function attachReplayListImages(imageCache: YgoProDeckImageCache, replayList: ReplayListResult) {
+async function attachReplayListImages(db: SiteDatabase, replayList: ReplayListResult) {
   const coverCardNames = replayList.items
     .flatMap((item) => item.players)
     .flatMap((player) => player.archetypes)
     .map((archetype) => archetype.coverCardName)
     .filter((value): value is string => Boolean(value));
-  const [imagePaths, croppedPaths] = await Promise.all([
-    imageCache.getPublicPaths(coverCardNames),
-    imageCache.getCroppedPublicPaths(coverCardNames),
-  ]);
+  const [imagePaths, croppedPaths] = await db.getCardImagePaths(coverCardNames);
 
   return {
     ...replayList,
@@ -79,16 +74,13 @@ async function attachReplayListImages(imageCache: YgoProDeckImageCache, replayLi
   };
 }
 
-async function attachReplayDetailImages(imageCache: YgoProDeckImageCache, replay: any) {
+async function attachReplayDetailImages(db: SiteDatabase, replay: any) {
   const cardNames = replay.players.flatMap((player: any) => player.uniqueCards.map((card: any) => card.name));
   const coverCardNames = replay.players
     .flatMap((player: any) => player.archetypes)
     .map((archetype: any) => archetype.coverCardName)
     .filter((value: any): value is string => Boolean(value));
-  const [imagePaths, croppedPaths] = await Promise.all([
-    imageCache.getPublicPaths([...cardNames, ...coverCardNames]),
-    imageCache.getCroppedPublicPaths(coverCardNames),
-  ]);
+  const [imagePaths, croppedPaths] = await db.getCardImagePaths([...cardNames, ...coverCardNames]);
 
   return {
     ...replay,
@@ -103,12 +95,9 @@ async function attachReplayDetailImages(imageCache: YgoProDeckImageCache, replay
   };
 }
 
-async function attachGroupImages(imageCache: YgoProDeckImageCache, groups: any[]) {
+async function attachGroupImages(db: SiteDatabase, groups: any[]) {
   const coverNames = groups.map((group) => group.coverCardName).filter((value): value is string => Boolean(value));
-  const [imagePaths, croppedPaths] = await Promise.all([
-    imageCache.getPublicPaths(coverNames),
-    imageCache.getCroppedPublicPaths(coverNames),
-  ]);
+  const [imagePaths, croppedPaths] = await db.getCardImagePaths(coverNames);
   return groups.map((group) => ({
     ...group,
     coverImagePath: group.coverCardName ? (imagePaths.get(group.coverCardName) ?? null) : null,
@@ -176,7 +165,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         page: parseNumber(url.searchParams.get("page")),
         pageSize: parseNumber(url.searchParams.get("pageSize")),
       });
-      return res.status(200).json(await attachReplayListImages(imageCache, result));
+      return res.status(200).json(await attachReplayListImages(db, result));
     }
 
     if (url.pathname.startsWith("/api/replays/") && req.method === "GET") {
@@ -186,7 +175,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const replay = await db.getReplayDetail(duelId);
       if (!replay) return res.status(404).json({ error: "Replay not found." });
       
-      return res.status(200).json(await attachReplayDetailImages(imageCache, replay));
+      return res.status(200).json(await attachReplayDetailImages(db, replay));
     }
 
     if (url.pathname === "/api/search/suggestions" && req.method === "GET") {
@@ -196,16 +185,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (type === "archetype") return res.status(200).json(await db.searchArchetypes(query));
       if (type === "card") {
         const cards = await db.searchCards(query);
-        const names = cards.map((card) => card.name);
-        const [paths, croppedPaths] = await Promise.all([
-          imageCache.getPublicPaths(names),
-          imageCache.getCroppedPublicPaths(names),
-        ]);
         return res.status(200).json(
           cards.map((card) => ({
             ...card,
-            imagePath: paths.get(card.name) ?? null,
-            imageCroppedPath: croppedPaths.get(card.name) ?? null,
+            imagePath: `https://images.ygoprodeck.com/images/cards/${card.cardId}.jpg`,
+            imageCroppedPath: `https://images.ygoprodeck.com/images/cards_cropped/${card.cardId}.jpg`,
           }))
         );
       }
@@ -215,10 +199,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (url.pathname === "/api/archetypes/highlighted" && req.method === "GET") {
       const archetypes = await db.listHighlightedArchetypes();
       const coverNames = archetypes.map((archetype) => archetype.coverCardName).filter((value): value is string => Boolean(value));
-      const [paths, croppedPaths] = await Promise.all([
-        imageCache.getPublicPaths(coverNames),
-        imageCache.getCroppedPublicPaths(coverNames),
-      ]);
+      const [paths, croppedPaths] = await db.getCardImagePaths(coverNames);
       return res.status(200).json(
         archetypes.map((archetype) => ({
           ...archetype,
@@ -260,7 +241,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (url.pathname === "/api/admin/archetype-groups" && req.method === "GET") {
-      return res.status(200).json(await attachGroupImages(imageCache, await db.listArchetypeGroups()));
+      return res.status(200).json(await attachGroupImages(db, await db.listArchetypeGroups()));
     }
 
     if (url.pathname === "/api/admin/archetype-groups" && req.method === "POST") {
@@ -312,16 +293,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (url.pathname === "/api/admin/cards" && req.method === "GET") {
       const cards = await db.searchCards(url.searchParams.get("q") ?? "");
-      const names = cards.map((card) => card.name);
-      const [imagePaths, croppedPaths] = await Promise.all([
-        imageCache.getPublicPaths(names),
-        imageCache.getCroppedPublicPaths(names),
-      ]);
       return res.status(200).json(
         cards.map((card) => ({
           ...card,
-          imagePath: imagePaths.get(card.name) ?? null,
-          imageCroppedPath: croppedPaths.get(card.name) ?? null,
+          imagePath: `https://images.ygoprodeck.com/images/cards/${card.cardId}.jpg`,
+          imageCroppedPath: `https://images.ygoprodeck.com/images/cards_cropped/${card.cardId}.jpg`,
         }))
       );
     }

@@ -705,6 +705,30 @@ export class SiteDatabase {
     }));
   }
 
+  async getCardImagePaths(names: string[]) {
+    const uniqueNames = Array.from(new Set(names)).filter(Boolean);
+    const paths = new Map<string, string>();
+    const croppedPaths = new Map<string, string>();
+
+    if (uniqueNames.length === 0) {
+      return [paths, croppedPaths] as const;
+    }
+
+    const res = await this.pool.query(`
+      SELECT name, MIN(card_id) AS card_id
+      FROM cards_catalog
+      WHERE name = ANY($1::text[])
+      GROUP BY name
+    `, [uniqueNames]);
+
+    for (const row of res.rows) {
+      paths.set(row.name, `https://images.ygoprodeck.com/images/cards/${row.card_id}.jpg`);
+      croppedPaths.set(row.name, `https://images.ygoprodeck.com/images/cards_cropped/${row.card_id}.jpg`);
+    }
+
+    return [paths, croppedPaths] as const;
+  }
+
   async searchPlayers(query: string, limit = 10): Promise<string[]> {
     const q = query.trim();
     if (!q) {
