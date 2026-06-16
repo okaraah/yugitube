@@ -39,6 +39,11 @@ type ReplayListResponse = {
   total: number;
   page: number;
   pageSize: number;
+  filterMetadata?: Array<{
+    name: string;
+    kind: string;
+    imageCroppedPath: string | null;
+  }>;
 };
 
 type ReplayGameRow = {
@@ -597,34 +602,66 @@ function ReplayListPage() {
         <p>Search recent ladder matches, view decks, and analyze games.</p>
       </header>
 
-      {highlightedArchetypes.length > 0 || params.getAll("card").length > 0 ? (
-        <div className="highlight-strip">
-          {highlightedArchetypes.map((archetype) => {
-            const activeArchetypes = params.getAll("archetype");
-            const active = activeArchetypes.includes(archetype.name);
-            return (
-              <button
-                key={`arch-${archetype.id}`}
-                type="button"
-                className={`highlight-pill${active ? " active" : ""}`}
-                onClick={() => toggleArchetype(archetype.name)}
-              >
-                {archetype.coverImageCroppedPath ? <img src={archetype.coverImageCroppedPath} alt={archetype.name} /> : <div className="archetype-fallback" />}
-                <span>{archetype.name}</span>
-              </button>
-            );
-          })}
-          {params.getAll("card").map((card) => (
-            <button
-              key={`card-${card}`}
-              type="button"
-              className="highlight-pill active"
-              onClick={() => toggleCard(card)}
-              style={{ borderLeft: "4px solid var(--accent)" }}
-            >
-              <span>{card}</span>
-            </button>
-          ))}
+      {(params.getAll("archetype").length > 0 || params.getAll("card").length > 0) ? (() => {
+        const activeArchetypes = params.getAll("archetype");
+        const activeCards = params.getAll("card");
+        return (
+          <div className="current-filters-section" style={{ marginBottom: "20px", padding: "16px", background: "var(--surface)", borderRadius: "8px", border: "1px solid var(--border)" }}>
+            <div style={{ fontSize: "0.85rem", textTransform: "uppercase", fontWeight: 700, color: "var(--text-3)", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              Current Filters
+              <button className="btn-ghost btn-sm" onClick={() => {
+                const next = new URLSearchParams(params);
+                next.delete("archetype");
+                next.delete("card");
+                next.set("page", "1");
+                setParams(next);
+              }}>Clear all</button>
+            </div>
+            <div className="highlight-strip" style={{ margin: 0 }}>
+              {activeArchetypes.map(arch => {
+                const meta = data?.filterMetadata?.find(m => m.name === arch && m.kind === "archetype");
+                return (
+                  <button key={`active-arch-${arch}`} type="button" className="highlight-pill active" onClick={() => toggleArchetype(arch)}>
+                    {meta?.imageCroppedPath ? <img src={meta.imageCroppedPath} alt={arch} /> : <div className="archetype-fallback" />}
+                    <span>{arch}</span>
+                  </button>
+                );
+              })}
+              {activeCards.map(card => {
+                const meta = data?.filterMetadata?.find(m => m.name === card && m.kind === "card");
+                return (
+                  <button key={`active-card-${card}`} type="button" className="highlight-pill active" onClick={() => toggleCard(card)} style={{ borderLeft: "4px solid var(--accent)" }}>
+                    {meta?.imageCroppedPath ? <img src={meta.imageCroppedPath} alt={card} /> : <div className="archetype-fallback" />}
+                    <span>{card}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })() : null}
+
+      {highlightedArchetypes.length > 0 ? (
+        <div style={{ marginBottom: "24px" }}>
+          <div style={{ fontSize: "0.85rem", textTransform: "uppercase", fontWeight: 700, color: "var(--text-3)", marginBottom: "12px", marginLeft: "4px" }}>
+            Trending Archetypes
+          </div>
+          <div className="highlight-strip" style={{ margin: 0 }}>
+            {highlightedArchetypes.map((archetype) => {
+              const active = params.getAll("archetype").includes(archetype.name);
+              return (
+                <button
+                  key={`arch-${archetype.id}`}
+                  type="button"
+                  className={`highlight-pill${active ? " active" : ""}`}
+                  onClick={() => toggleArchetype(archetype.name)}
+                >
+                  {archetype.coverImageCroppedPath ? <img src={archetype.coverImageCroppedPath} alt={archetype.name} /> : <div className="archetype-fallback" />}
+                  <span>{archetype.name}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       ) : null}
 

@@ -50,6 +50,11 @@ export type ReplayListResult = {
   total: number;
   page: number;
   pageSize: number;
+  filterMetadata?: Array<{
+    name: string;
+    kind: string;
+    imageCroppedPath: string | null;
+  }>;
 };
 
 export type ReplayGameRow = {

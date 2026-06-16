@@ -54,7 +54,7 @@ function toReplayArchetypesWithImages(
   }));
 }
 
-async function attachReplayListImages(db: SiteDatabase, replayList: ReplayListResult) {
+async function attachReplayListImages(db: SiteDatabase, replayList: ReplayListResult, filters?: any) {
   const coverCardNames = replayList.items
     .flatMap((item) => item.players)
     .flatMap((player) => player.archetypes)
@@ -62,8 +62,30 @@ async function attachReplayListImages(db: SiteDatabase, replayList: ReplayListRe
     .filter((value): value is string => Boolean(value));
   const [imagePaths, croppedPaths] = await db.getCardImagePaths(coverCardNames);
 
+  const filterMetadata: Array<{ name: string; kind: string; imageCroppedPath: string | null }> = [];
+  if (filters) {
+    if (filters.cards && filters.cards.length > 0) {
+      const [imgP, cropP] = await db.getCardImagePaths(filters.cards);
+      for (const card of filters.cards) {
+        filterMetadata.push({ name: card, kind: "card", imageCroppedPath: cropP.get(card) ?? null });
+      }
+    }
+    if (filters.archetypes && filters.archetypes.length > 0) {
+      const groups = await db.listArchetypeGroups();
+      const activeGroups = groups.filter(g => filters.archetypes.includes(g.name));
+      const coverCards = activeGroups.map(g => g.coverCardName).filter(Boolean) as string[];
+      const [imgP, cropP] = await db.getCardImagePaths(coverCards);
+      for (const arch of filters.archetypes) {
+        const group = activeGroups.find(g => g.name === arch);
+        const cover = group?.coverCardName;
+        filterMetadata.push({ name: arch, kind: "archetype", imageCroppedPath: cover ? (cropP.get(cover) ?? null) : null });
+      }
+    }
+  }
+
   return {
     ...replayList,
+    filterMetadata,
     items: replayList.items.map((item) => ({
       ...item,
       players: item.players.map((player) => ({
@@ -165,7 +187,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     if (url.pathname === "/api/replays" && req.method === "GET") {
-      const result = await db.listReplayPage({
+      const filters = {
         q: url.searchParams.get("q") ?? undefined,
         player: url.searchParams.get("player") ?? undefined,
         archetypes: url.searchParams.getAll("archetype"),
@@ -175,8 +197,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         sort: (url.searchParams.get("sort") as any) ?? "newest",
         page: parseNumber(url.searchParams.get("page")),
         pageSize: parseNumber(url.searchParams.get("pageSize")),
-      });
-      return res.status(200).json(await attachReplayListImages(db, result));
+      };
+      const result = await db.listReplayPage(filters);
+      return res.status(200).json(await attachReplayListImages(db, result, filters));
     }
 
     if (url.pathname.startsWith("/api/replays/") && req.method === "GET") {
