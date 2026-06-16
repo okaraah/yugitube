@@ -283,9 +283,11 @@ function ArchetypeChips({ archetypes }: { archetypes: ReplayArchetype[] }) {
 function SuggestionMenu({
   suggestions,
   onSelect,
+  selectedValues,
 }: {
   suggestions: SearchSuggestion[];
   onSelect: (value: string) => void;
+  selectedValues?: Set<string>;
 }) {
   if (suggestions.length === 0) {
     return null;
@@ -297,7 +299,7 @@ function SuggestionMenu({
         <button
           key={`${suggestion.kind}:${suggestion.value}`}
           type="button"
-          className="suggestion-row"
+          className={`suggestion-row ${selectedValues?.has(suggestion.value) ? "selected" : ""}`}
           onClick={() => onSelect(suggestion.value)}
         >
           {suggestion.imageCroppedPath ? (
@@ -915,7 +917,7 @@ function ReplayDetailPage() {
               style={{ 
                 position: "fixed", bottom: "32px", left: "32px", 
                 zIndex: 100, background: "var(--accent)", color: "var(--bg)", 
-                border: "none", borderRadius: "32px", padding: "14px 24px", 
+                border: "none", borderRadius: "32px", padding: "0 24px", height: "52px", boxSizing: "border-box",
                 fontWeight: 600, fontSize: "1rem", boxShadow: "0 8px 24px rgba(240,178,50,0.4)",
                 display: "flex", alignItems: "center", gap: "10px", cursor: "pointer",
                 transition: "transform 0.2s, box-shadow 0.2s",
@@ -1279,18 +1281,15 @@ function AdminArchetypesPage() {
     }
   }
 
-  function addCard(name: string) {
-    setForm((current) =>
-      current.cards.includes(name)
-        ? current
-        : {
-            ...current,
-            cards: [...current.cards, name],
-            coverCardName: current.coverCardName || name,
-          },
-    );
-    setSearch("");
-    setSuggestions([]);
+  function toggleCard(name: string) {
+    setForm((current) => {
+      const exists = current.cards.includes(name);
+      return {
+        ...current,
+        cards: exists ? current.cards.filter((card) => card !== name) : [...current.cards, name],
+        coverCardName: exists ? (current.coverCardName === name ? "" : current.coverCardName) : (current.coverCardName || name),
+      };
+    });
   }
 
   function removeCard(name: string) {
@@ -1349,8 +1348,38 @@ function AdminArchetypesPage() {
             </label>
             <label>
               Add card
-              <div className="autocomplete-field">
-                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Type a card name" />
+              <div className="autocomplete-field" style={{ position: "relative" }}>
+                <input 
+                  value={search} 
+                  onChange={(event) => setSearch(event.target.value)} 
+                  placeholder="Type a card name" 
+                  style={{ paddingRight: "30px" }}
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearch("");
+                      setSuggestions([]);
+                    }}
+                    style={{
+                      position: "absolute",
+                      right: "8px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      background: "none",
+                      border: "none",
+                      color: "var(--text-3)",
+                      cursor: "pointer",
+                      padding: "4px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                  </button>
+                )}
                 <SuggestionMenu
                   suggestions={suggestions.map((card) => ({
                     value: card.name,
@@ -1358,7 +1387,8 @@ function AdminArchetypesPage() {
                     imagePath: card.imagePath,
                     imageCroppedPath: card.imageCroppedPath,
                   }))}
-                  onSelect={addCard}
+                  onSelect={toggleCard}
+                  selectedValues={new Set(form.cards)}
                 />
               </div>
             </label>

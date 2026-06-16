@@ -356,6 +356,7 @@ button:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
 }
 
 .suggestion-row:hover { background: rgba(255, 255, 255, 0.05); }
+.suggestion-row.selected { background: rgba(240, 178, 50, 0.2); border-left: 3px solid var(--accent); padding-left: 5px; }
 
 .suggestion-thumb, .suggestion-kind {
   flex: 0 0 auto;
