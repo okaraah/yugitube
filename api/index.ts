@@ -149,6 +149,7 @@ function validateArchetypeInput(input: any) {
     name,
     threshold,
     enabled: input.enabled !== false,
+    isTrending: input.isTrending === true,
     coverCardName: input.coverCardName ?? null,
     cards,
   } satisfies ArchetypeGroupInput;

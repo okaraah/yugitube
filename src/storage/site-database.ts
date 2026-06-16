@@ -108,6 +108,7 @@ export type ArchetypeGroup = {
   cards: string[];
   matchCount: number;
   updatedAt: string;
+  isTrending: boolean;
 };
 
 export type HighlightedArchetype = {
@@ -121,6 +122,7 @@ export type ArchetypeGroupInput = {
   name: string;
   threshold: number;
   enabled: boolean;
+  isTrending: boolean;
   coverCardName: string | null;
   cards: string[];
 };
@@ -316,7 +318,8 @@ export class SiteDatabase {
         enabled INTEGER NOT NULL DEFAULT 1,
         cover_card_name TEXT,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        is_trending INTEGER NOT NULL DEFAULT 0
       );
 
       CREATE TABLE IF NOT EXISTS archetype_group_cards (
@@ -351,6 +354,11 @@ export class SiteDatabase {
       SELECT setval('worker_sessions_id_seq', COALESCE((SELECT MAX(id) FROM worker_sessions), 1), true);
       SELECT setval('archetype_groups_id_seq', COALESCE((SELECT MAX(id) FROM archetype_groups), 1), true);
       SELECT setval('reclassification_jobs_id_seq', COALESCE((SELECT MAX(id) FROM reclassification_jobs), 1), true);
+    `);
+
+    // Postgres 9.6+ supports ADD COLUMN IF NOT EXISTS
+    await this.pool.query(`
+      ALTER TABLE archetype_groups ADD COLUMN IF NOT EXISTS is_trending INTEGER NOT NULL DEFAULT 0;
     `);
   }
 
@@ -734,6 +742,7 @@ export class SiteDatabase {
       name: group.name,
       threshold: Number(group.threshold),
       enabled: group.enabled === 1,
+      isTrending: group.is_trending === 1,
       coverCardName: group.cover_card_name,
       cards: cardsByGroup.get(Number(group.id)) ?? [],
       matchCount: matchCountByGroup.get(Number(group.id)) ?? 0,
@@ -750,7 +759,7 @@ export class SiteDatabase {
           COUNT(m.group_id) AS match_count
         FROM archetype_groups g
         LEFT JOIN duel_player_archetype_matches m ON m.group_id = g.id
-        WHERE g.enabled = 1
+        WHERE g.enabled = 1 AND g.is_trending = 1
         GROUP BY g.id, g.name, g.cover_card_name
         ORDER BY match_count DESC, g.name ASC
         LIMIT $1
@@ -770,10 +779,10 @@ export class SiteDatabase {
     try {
       await client.query("BEGIN");
       const res = await client.query(`
-          INSERT INTO archetype_groups (name, threshold, enabled, cover_card_name, created_at, updated_at)
-          VALUES ($1, $2, $3, $4, $5, $6)
+          INSERT INTO archetype_groups (name, threshold, enabled, cover_card_name, created_at, updated_at, is_trending)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
           RETURNING id
-        `, [input.name, input.threshold, input.enabled ? 1 : 0, input.coverCardName, now, now]);
+        `, [input.name, input.threshold, input.enabled ? 1 : 0, input.coverCardName, now, now, input.isTrending ? 1 : 0]);
       const groupId = res.rows[0].id;
       await this.replaceGroupCards(groupId, input.cards, client);
       await client.query("COMMIT");
@@ -793,9 +802,9 @@ export class SiteDatabase {
       await client.query("BEGIN");
       await client.query(`
           UPDATE archetype_groups
-          SET name = $1, threshold = $2, enabled = $3, cover_card_name = $4, updated_at = $5
+          SET name = $1, threshold = $2, enabled = $3, cover_card_name = $4, updated_at = $5, is_trending = $7
           WHERE id = $6
-        `, [input.name, input.threshold, input.enabled ? 1 : 0, input.coverCardName, now, groupId]);
+        `, [input.name, input.threshold, input.enabled ? 1 : 0, input.coverCardName, now, groupId, input.isTrending ? 1 : 0]);
       await this.replaceGroupCards(groupId, input.cards, client);
       await client.query("COMMIT");
     } catch (error) {

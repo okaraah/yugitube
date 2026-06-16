@@ -93,6 +93,7 @@ type ArchetypeGroup = {
   name: string;
   threshold: number;
   enabled: boolean;
+  isTrending: boolean;
   coverCardName: string | null;
   coverImagePath: string | null;
   coverImageCroppedPath: string | null;
@@ -176,8 +177,8 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit) {
 function ScoreBadge({ score, color = "accent" }: { score: string | null; color?: "accent" | "success" }) {
   if (!score) return <span className="muted">n/a</span>;
   const matches = score.match(/\d+/g);
-  const left = matches?.[0] ?? "0";
-  const right = matches?.[1] ?? "0";
+  const left = matches ? Math.max(Number(matches[0]), Number(matches[1])) : 0;
+  const right = matches ? Math.min(Number(matches[0]), Number(matches[1])) : 0;
   const isSuccess = color === "success";
   const bg = isSuccess ? "rgba(74, 222, 128, 0.15)" : "rgba(240,178,50,0.15)";
   const fg = isSuccess ? "var(--success)" : "var(--accent-light)";
@@ -720,21 +721,26 @@ function ReplayListPage() {
       {data ? (
         <>
           <div className="replay-grid" ref={gridRef}>
-            {data.items.map((item) => (
+            {data.items.map((item) => {
+              const sortedPlayers = [...item.players].sort((a, b) => a.won === b.won ? 0 : a.won ? -1 : 1);
+              const p1 = sortedPlayers[0];
+              const p2 = sortedPlayers[1];
+
+              return (
               <article className="replay-card" key={item.duelId}>
                 <div className="replay-card-top" style={{ justifyContent: "center" }}>
                   <div style={{ display: "flex", gap: "24px", alignItems: "center", width: "100%" }}>
                     <div className="replay-player-info" style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "flex-end" }}>
-                      <Tooltip text={`Rating: ${item.players[0]?.rating ?? "n/a"}`} style={{ minWidth: 0, maxWidth: "100%", display: "inline-block" }}>
-                        <div className="replay-player-name" style={{ fontSize: "1.2rem", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>{item.players[0]?.username}</div>
+                      <Tooltip text={`Rating: ${p1?.rating ?? "n/a"}`} style={{ minWidth: 0, maxWidth: "100%", display: "inline-block" }}>
+                        <div className="replay-player-name" style={{ fontSize: "1.2rem", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>{p1?.username}</div>
                       </Tooltip>
                     </div>
                     <Link to={`/replays/${item.duelId}`} style={{ display: "flex", textDecoration: "none", flexShrink: 0 }}>
                       <ScoreBadge score={item.finalScore} />
                     </Link>
                     <div className="replay-player-info" style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "flex-start" }}>
-                      <Tooltip text={`Rating: ${item.players[1]?.rating ?? "n/a"}`} style={{ minWidth: 0, maxWidth: "100%", display: "inline-block" }}>
-                        <div className="replay-player-name" style={{ fontSize: "1.2rem", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>{item.players[1]?.username}</div>
+                      <Tooltip text={`Rating: ${p2?.rating ?? "n/a"}`} style={{ minWidth: 0, maxWidth: "100%", display: "inline-block" }}>
+                        <div className="replay-player-name" style={{ fontSize: "1.2rem", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>{p2?.username}</div>
                       </Tooltip>
                     </div>
                   </div>
@@ -743,18 +749,17 @@ function ReplayListPage() {
                 <div className="replay-card-body" style={{ display: "flex", justifyContent: "center", marginTop: "12px", border: "none", paddingTop: 0 }}>
                   <div style={{ display: "flex", justifyContent: "flex-end", flex: 1 }}>
                     <div className="archetype-gallery" style={{ justifyContent: "flex-end" }}>
-                      {item.players[0]?.archetypes.length ? (
+                      {p1?.archetypes.length ? (
                         <>
-                          {item.players[0].archetypes.slice(0, 2).map((arch, index) => {
-                            const isLast = index === 1 || (index === 0 && item.players[0].archetypes.length === 1);
-                            const hasMore = item.players[0].archetypes.length > 2;
+                          {p1.archetypes.slice(0, 2).map((arch, index) => {
+                            const hasMore = p1.archetypes.length > 2;
 
                             if (index === 1 && hasMore) {
                               return (
                                 <ArchetypeOverflow 
                                   key={arch.name} 
                                   arch={arch} 
-                                  overflowArchetypes={item.players[0].archetypes.slice(2)} 
+                                  overflowArchetypes={p1.archetypes.slice(2)} 
                                 />
                               );
                             }
@@ -766,26 +771,27 @@ function ReplayListPage() {
                             );
                           })}
                         </>
-                      ) : <div className="archetype-gallery-fallback">?</div>}
+                      ) : (
+                        <div className="archetype-gallery-fallback">?</div>
+                      )}
                     </div>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "center", width: 60, flexShrink: 0 }}>
-                    <div style={{ width: 1, background: "var(--border-strong)", margin: "4px 0" }} />
-                  </div>
+                  
+                  <div style={{ width: "24px", flexShrink: 0 }} />
+
                   <div style={{ display: "flex", justifyContent: "flex-start", flex: 1 }}>
-                    <div className="archetype-gallery">
-                      {item.players[1]?.archetypes.length ? (
+                    <div className="archetype-gallery" style={{ justifyContent: "flex-start" }}>
+                      {p2?.archetypes.length ? (
                         <>
-                          {item.players[1].archetypes.slice(0, 2).map((arch, index) => {
-                            const isLast = index === 1 || (index === 0 && item.players[1].archetypes.length === 1);
-                            const hasMore = item.players[1].archetypes.length > 2;
+                          {p2.archetypes.slice(0, 2).map((arch, index) => {
+                            const hasMore = p2.archetypes.length > 2;
 
                             if (index === 1 && hasMore) {
                               return (
                                 <ArchetypeOverflow 
                                   key={arch.name} 
                                   arch={arch} 
-                                  overflowArchetypes={item.players[1].archetypes.slice(2)} 
+                                  overflowArchetypes={p2.archetypes.slice(2)} 
                                 />
                               );
                             }
@@ -797,7 +803,9 @@ function ReplayListPage() {
                             );
                           })}
                         </>
-                      ) : <div className="archetype-gallery-fallback">?</div>}
+                      ) : (
+                        <div className="archetype-gallery-fallback">?</div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -826,7 +834,8 @@ function ReplayListPage() {
                   </div>
                 </div>
               </article>
-            ))}
+              );
+            })}
           </div>
 
           <div className="pagination">
@@ -1258,6 +1267,7 @@ function AdminArchetypesPage() {
     name: "",
     threshold: "3",
     enabled: true,
+    isTrending: false,
     coverCardName: "",
     cards: [] as string[],
   });
@@ -1326,6 +1336,7 @@ function AdminArchetypesPage() {
       name: "",
       threshold: "3",
       enabled: true,
+      isTrending: false,
       coverCardName: "",
       cards: [],
     });
@@ -1339,6 +1350,7 @@ function AdminArchetypesPage() {
       name: group.name,
       threshold: String(group.threshold),
       enabled: group.enabled,
+      isTrending: group.isTrending,
       coverCardName: group.coverCardName ?? "",
       cards: group.cards,
     });
@@ -1350,6 +1362,7 @@ function AdminArchetypesPage() {
       name: form.name.trim(),
       threshold: Number(form.threshold),
       enabled: form.enabled,
+      isTrending: form.isTrending,
       coverCardName: form.coverCardName || null,
       cards: form.cards,
     };
@@ -1367,6 +1380,7 @@ function AdminArchetypesPage() {
     setError(null);
 
     try {
+      setLoading(true);
       const url = isEditing ? `/api/admin/archetype-groups/${form.id}` : "/api/admin/archetype-groups";
       const method = isEditing ? "PUT" : "POST";
       await fetchJson(url, {
@@ -1377,11 +1391,13 @@ function AdminArchetypesPage() {
       await loadAll();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      setLoading(false);
     }
   }
 
   async function deleteGroup(id: number) {
     try {
+      setLoading(true);
       await fetchJson(`/api/admin/archetype-groups/${id}`, { method: "DELETE" });
       if (form.id === String(id)) {
         resetForm();
@@ -1389,6 +1405,7 @@ function AdminArchetypesPage() {
       await loadAll();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      setLoading(false);
     }
   }
 
@@ -1449,14 +1466,24 @@ function AdminArchetypesPage() {
                 Player matches when their deck contains at least this many cards from the group.
               </span>
             </label>
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={form.enabled}
-                onChange={(event) => setForm((current) => ({ ...current, enabled: event.target.checked }))}
-              />
-              Enabled
-            </label>
+            <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+              <label className="checkbox-row" style={{ flex: 1 }}>
+                <input
+                  type="checkbox"
+                  checked={form.enabled}
+                  onChange={(event) => setForm((current) => ({ ...current, enabled: event.target.checked }))}
+                />
+                Enabled
+              </label>
+              <label className="checkbox-row" style={{ flex: 1 }}>
+                <input
+                  type="checkbox"
+                  checked={form.isTrending}
+                  onChange={(event) => setForm((current) => ({ ...current, isTrending: event.target.checked }))}
+                />
+                Trending filter
+              </label>
+            </div>
             <label>
               Add card
               <div 
