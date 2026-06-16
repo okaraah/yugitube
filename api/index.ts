@@ -169,7 +169,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         q: url.searchParams.get("q") ?? undefined,
         player: url.searchParams.get("player") ?? undefined,
         archetypes: url.searchParams.getAll("archetype"),
-        card: url.searchParams.get("card") ?? undefined,
+        cards: url.searchParams.getAll("card"),
         minRating: parseNumber(url.searchParams.get("minRating")),
         maxRating: parseNumber(url.searchParams.get("maxRating")),
         sort: (url.searchParams.get("sort") as any) ?? "newest",

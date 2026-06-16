@@ -37,7 +37,7 @@ export type ReplayListFilters = {
   q?: string;
   player?: string;
   archetypes?: string[];
-  card?: string;
+  cards?: string[];
   minRating?: number;
   maxRating?: number;
   sort?: "newest" | "oldest" | "plays_desc" | "duration_desc" | "rating_desc";
@@ -928,13 +928,17 @@ export class SiteDatabase {
       }
     }
 
-    if (filters.card?.trim()) {
-      where.push(`
-        AND EXISTS (
-          SELECT 1 FROM duel_seen_cards c
-          WHERE c.duel_id = d.duel_id AND c.card_name ILIKE ${addParam(`%${filters.card.trim()}%`)}
-        )
-      `);
+    if (filters.cards && filters.cards.length > 0) {
+      for (const card of filters.cards) {
+        if (card.trim()) {
+          where.push(`
+            AND EXISTS (
+              SELECT 1 FROM duel_seen_cards c
+              WHERE c.duel_id = d.duel_id AND c.card_name ILIKE ${addParam(`%${card.trim()}%`)}
+            )
+          `);
+        }
+      }
     }
 
     if (typeof filters.minRating === "number") {

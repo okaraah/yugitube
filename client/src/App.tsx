@@ -286,7 +286,7 @@ function SuggestionMenu({
   selectedValues,
 }: {
   suggestions: SearchSuggestion[];
-  onSelect: (value: string) => void;
+  onSelect: (value: string, kind: string) => void;
   selectedValues?: Set<string>;
 }) {
   if (suggestions.length === 0) {
@@ -300,7 +300,7 @@ function SuggestionMenu({
           key={`${suggestion.kind}:${suggestion.value}`}
           type="button"
           className={`suggestion-row ${selectedValues?.has(suggestion.value) ? "selected" : ""}`}
-          onClick={() => onSelect(suggestion.value)}
+          onClick={() => onSelect(suggestion.value, suggestion.kind)}
         >
           {suggestion.imageCroppedPath ? (
             <span className="suggestion-thumb">
@@ -423,7 +423,27 @@ function ReplayListPage() {
   const [gridRef] = useAutoAnimate<HTMLDivElement>();
 
   const queryString = params.toString();
-  const quickSearch = (params.get("q") ?? "").trim();
+  
+  const [qText, setQText] = useState(params.get("q") ?? "");
+  const [qFocused, setQFocused] = useState(false);
+
+  useEffect(() => {
+    setQText(params.get("q") ?? "");
+  }, [params.get("q")]);
+
+  useEffect(() => {
+    if (qText === (params.get("q") ?? "")) return;
+    const handler = setTimeout(() => {
+      const next = new URLSearchParams(params);
+      if (qText) next.set("q", qText);
+      else next.delete("q");
+      next.set("page", "1");
+      setParams(next);
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [qText, params]);
+
+  const quickSearch = qText.trim();
 
   useEffect(() => {
     let cancelled = false;
@@ -530,6 +550,36 @@ function ReplayListPage() {
     setParams(next);
   }
 
+  function toggleCard(name: string) {
+    const next = new URLSearchParams(params);
+    const current = next.getAll("card");
+    next.delete("card");
+    if (current.includes(name)) {
+      current.filter(c => c !== name).forEach(c => next.append("card", c));
+    } else {
+      current.push(name);
+      current.forEach(c => next.append("card", c));
+    }
+    next.set("page", "1");
+    setParams(next);
+  }
+
+  function applySuggestion(value: string, kind: string) {
+    if (kind === "archetype") {
+      toggleArchetype(value);
+      setQText("");
+    } else if (kind === "card") {
+      toggleCard(value);
+      setQText("");
+    } else if (kind === "player") {
+      updateFilter("player", value);
+      setQText("");
+    } else {
+      setQText(value);
+    }
+    setQFocused(false);
+  }
+
   function changePage(page: number) {
     const next = new URLSearchParams(params);
     next.set("page", String(page));
@@ -547,14 +597,14 @@ function ReplayListPage() {
         <p>Search recent ladder matches, view decks, and analyze games.</p>
       </header>
 
-      {highlightedArchetypes.length > 0 ? (
+      {highlightedArchetypes.length > 0 || params.getAll("card").length > 0 ? (
         <div className="highlight-strip">
           {highlightedArchetypes.map((archetype) => {
             const activeArchetypes = params.getAll("archetype");
             const active = activeArchetypes.includes(archetype.name);
             return (
               <button
-                key={archetype.id}
+                key={`arch-${archetype.id}`}
                 type="button"
                 className={`highlight-pill${active ? " active" : ""}`}
                 onClick={() => toggleArchetype(archetype.name)}
@@ -564,19 +614,40 @@ function ReplayListPage() {
               </button>
             );
           })}
+          {params.getAll("card").map((card) => (
+            <button
+              key={`card-${card}`}
+              type="button"
+              className="highlight-pill active"
+              onClick={() => toggleCard(card)}
+              style={{ borderLeft: "4px solid var(--accent)" }}
+            >
+              <span>{card}</span>
+            </button>
+          ))}
         </div>
       ) : null}
 
       <div className="filter-bar">
         <label>
           Search
-          <div className="autocomplete-field">
+          <div 
+            className="autocomplete-field"
+            onFocus={() => setQFocused(true)}
+            onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setQFocused(false); }}
+          >
             <input
-              value={params.get("q") ?? ""}
-              onChange={(event) => updateFilter("q", event.target.value)}
+              value={qText}
+              onChange={(event) => setQText(event.target.value)}
               placeholder="card, archetype, username"
             />
-            <SuggestionMenu suggestions={searchSuggestions} onSelect={(value) => updateFilter("q", value)} />
+            {qFocused && (
+              <SuggestionMenu 
+                suggestions={searchSuggestions} 
+                onSelect={applySuggestion} 
+                selectedValues={new Set([...params.getAll("archetype"), ...params.getAll("card")])} 
+              />
+            )}
           </div>
         </label>
         <label>
@@ -1147,6 +1218,7 @@ function AdminArchetypesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
   const [suggestions, setSuggestions] = useState<CardSearchResult[]>([]);
   const [form, setForm] = useState({
     id: "",
@@ -1192,20 +1264,23 @@ function AdminArchetypesPage() {
       return;
     }
 
-    fetchJson<CardSearchResult[]>(`/api/admin/cards?q=${encodeURIComponent(search.trim())}`)
-      .then((result) => {
-        if (!cancelled) {
-          setSuggestions(result);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setSuggestions([]);
-        }
-      });
+    const handler = setTimeout(() => {
+      fetchJson<CardSearchResult[]>(`/api/admin/cards?q=${encodeURIComponent(search.trim())}`)
+        .then((result) => {
+          if (!cancelled) {
+            setSuggestions(result);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setSuggestions([]);
+          }
+        });
+    }, 400);
 
     return () => {
       cancelled = true;
+      clearTimeout(handler);
     };
   }, [search]);
 
@@ -1348,7 +1423,12 @@ function AdminArchetypesPage() {
             </label>
             <label>
               Add card
-              <div className="autocomplete-field" style={{ position: "relative" }}>
+              <div 
+                className="autocomplete-field" 
+                style={{ position: "relative" }}
+                onFocus={() => setSearchFocused(true)}
+                onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setSearchFocused(false); }}
+              >
                 <input 
                   value={search} 
                   onChange={(event) => setSearch(event.target.value)} 
@@ -1361,6 +1441,7 @@ function AdminArchetypesPage() {
                     onClick={() => {
                       setSearch("");
                       setSuggestions([]);
+                      setSearchFocused(true);
                     }}
                     style={{
                       position: "absolute",
@@ -1380,16 +1461,18 @@ function AdminArchetypesPage() {
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                   </button>
                 )}
-                <SuggestionMenu
-                  suggestions={suggestions.map((card) => ({
-                    value: card.name,
-                    kind: "card",
-                    imagePath: card.imagePath,
-                    imageCroppedPath: card.imageCroppedPath,
-                  }))}
-                  onSelect={toggleCard}
-                  selectedValues={new Set(form.cards)}
-                />
+                {searchFocused && (
+                  <SuggestionMenu
+                    suggestions={suggestions.map((card) => ({
+                      value: card.name,
+                      kind: "card",
+                      imagePath: card.imagePath,
+                      imageCroppedPath: card.imageCroppedPath,
+                    }))}
+                    onSelect={toggleCard}
+                    selectedValues={new Set(form.cards)}
+                  />
+                )}
               </div>
             </label>
             <div className="selected-cards">
