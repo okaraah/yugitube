@@ -341,6 +341,11 @@ export class SiteDatabase {
         summary_json TEXT,
         error_text TEXT
       );
+
+      SELECT setval('scraper_runs_id_seq', COALESCE((SELECT MAX(id) FROM scraper_runs), 1), true);
+      SELECT setval('worker_sessions_id_seq', COALESCE((SELECT MAX(id) FROM worker_sessions), 1), true);
+      SELECT setval('archetype_groups_id_seq', COALESCE((SELECT MAX(id) FROM archetype_groups), 1), true);
+      SELECT setval('reclassification_jobs_id_seq', COALESCE((SELECT MAX(id) FROM reclassification_jobs), 1), true);
     `);
   }
 
