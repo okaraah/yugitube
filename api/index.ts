@@ -9,7 +9,7 @@ const ADMIN_COOKIE_NAME = "yugitube_admin_session";
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 14;
 
 // Global singletons (preserved across warm starts)
-const db = new SiteDatabase();
+let db: SiteDatabase | null = null;
 let dbInitPromise: Promise<void> | null = null;
 
 function signSession(sessionId: string, secret: string) {
@@ -133,15 +133,26 @@ function validateArchetypeInput(input: any) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (!dbInitPromise) {
-    dbInitPromise = db.init().then(() => {
-      return Promise.all([
-        db.clearExpiredAdminSessions(),
-        db.ensureReplayDerivedData()
-      ]);
-    }).then(() => {});
+  try {
+    if (!db) {
+      db = new SiteDatabase();
+    }
+
+    if (!dbInitPromise) {
+      dbInitPromise = db.init().then(() => {
+        // It's safe to use the non-null assertion (!) here because db is defined right above
+        return Promise.all([
+          db!.clearExpiredAdminSessions(),
+          db!.ensureReplayDerivedData()
+        ]);
+      }).then(() => {});
+    }
+    await dbInitPromise;
+  } catch (error: any) {
+    // If the database fails to initialize (missing URL or invalid credentials), we catch it here and return gracefully
+    console.error("Database initialization failed:", error);
+    return res.status(500).json({ error: `Database initialization failed: ${error.message}` });
   }
-  await dbInitPromise;
 
   const adminPassword = process.env.YUGITUBE_ADMIN_PASSWORD;
   if (!adminPassword) {
