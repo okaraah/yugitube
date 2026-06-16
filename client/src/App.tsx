@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState, ReactNode, useRef } from "reac
 import { createPortal } from "react-dom";
 import { Link, Route, Routes, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
+import { Analytics } from "@vercel/analytics/react";
 
 type ReplayArchetype = {
   groupId: number;
@@ -1535,12 +1536,15 @@ function AdminWorkersPage() {
 
 export function App() {
   return (
-    <Routes>
-      <Route path="/" element={<ReplayListPage />} />
-      <Route path="/replays/:duelId" element={<ReplayDetailPage />} />
-      <Route path="/matrix/login" element={<AdminLoginPage />} />
-      <Route path="/matrix/archetypes" element={<AdminArchetypesPage />} />
-      <Route path="/matrix/workers" element={<AdminWorkersPage />} />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/" element={<ReplayListPage />} />
+        <Route path="/replays/:duelId" element={<ReplayDetailPage />} />
+        <Route path="/matrix/login" element={<AdminLoginPage />} />
+        <Route path="/matrix/archetypes" element={<AdminArchetypesPage />} />
+        <Route path="/matrix/workers" element={<AdminWorkersPage />} />
+      </Routes>
+      <Analytics />
+    </>
   );
 }
