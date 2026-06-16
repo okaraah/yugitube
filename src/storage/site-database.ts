@@ -122,6 +122,7 @@ export type ArchetypeGroupInput = {
 
 export type CardSearchResult = {
   cardId: number;
+  passcode?: number;
   name: string;
 };
 
@@ -806,7 +807,7 @@ export class SiteDatabase {
     }
 
     const res = await this.pool.query(`
-        SELECT MIN(card_id) AS card_id, name
+        SELECT MIN(card_id) AS card_id, name, MIN(CAST(raw_json::json->>'s' AS INTEGER)) AS passcode
         FROM cards_catalog
         WHERE name ILIKE $1
         GROUP BY name
@@ -819,6 +820,7 @@ export class SiteDatabase {
 
     return res.rows.map((row) => ({
       cardId: Number(row.card_id),
+      passcode: Number(row.passcode),
       name: row.name,
     }));
   }
@@ -833,15 +835,17 @@ export class SiteDatabase {
     }
 
     const res = await this.pool.query(`
-      SELECT name, MIN(card_id) AS card_id
+      SELECT name, MIN(CAST(raw_json::json->>'s' AS INTEGER)) AS passcode
       FROM cards_catalog
       WHERE name = ANY($1::text[])
       GROUP BY name
     `, [uniqueNames]);
 
     for (const row of res.rows) {
-      paths.set(row.name, `https://images.ygoprodeck.com/images/cards/${row.card_id}.jpg`);
-      croppedPaths.set(row.name, `https://images.ygoprodeck.com/images/cards_cropped/${row.card_id}.jpg`);
+      if (row.passcode && Number(row.passcode) > 0) {
+        paths.set(row.name, `https://images.ygoprodeck.com/images/cards/${row.passcode}.jpg`);
+        croppedPaths.set(row.name, `https://images.ygoprodeck.com/images/cards_cropped/${row.passcode}.jpg`);
+      }
     }
 
     return [paths, croppedPaths] as const;

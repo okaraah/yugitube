@@ -197,11 +197,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (type === "card") {
         const cards = await db.searchCards(query);
         return res.status(200).json(
-          cards.map((card) => ({
-            ...card,
-            imagePath: `https://images.ygoprodeck.com/images/cards/${card.cardId}.jpg`,
-            imageCroppedPath: `https://images.ygoprodeck.com/images/cards_cropped/${card.cardId}.jpg`,
-          }))
+          cards.map((card) => {
+            const idToUse = card.passcode && card.passcode > 0 ? card.passcode : card.cardId;
+            return {
+              ...card,
+              imagePath: `https://images.ygoprodeck.com/images/cards/${idToUse}.jpg`,
+              imageCroppedPath: `https://images.ygoprodeck.com/images/cards_cropped/${idToUse}.jpg`,
+            };
+          })
         );
       }
       return res.status(400).json({ error: "Unknown suggestion type." });
@@ -305,11 +308,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (url.pathname === "/api/admin/cards" && req.method === "GET") {
       const cards = await db.searchCards(url.searchParams.get("q") ?? "");
       return res.status(200).json(
-        cards.map((card) => ({
-          ...card,
-          imagePath: `https://images.ygoprodeck.com/images/cards/${card.cardId}.jpg`,
-          imageCroppedPath: `https://images.ygoprodeck.com/images/cards_cropped/${card.cardId}.jpg`,
-        }))
+        cards.map((card) => {
+          const idToUse = card.passcode && card.passcode > 0 ? card.passcode : card.cardId;
+          return {
+            ...card,
+            imagePath: `https://images.ygoprodeck.com/images/cards/${idToUse}.jpg`,
+            imageCroppedPath: `https://images.ygoprodeck.com/images/cards_cropped/${idToUse}.jpg`,
+          };
+        })
       );
     }
 
