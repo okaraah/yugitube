@@ -112,7 +112,7 @@ function parseNumber(value: string | null | undefined) {
 }
 
 function validateArchetypeInput(input: any) {
-  const cards = Array.from(new Set((input.cards ?? []).map((card: string) => card.trim()).filter(Boolean)));
+  const cards = Array.from<string>(new Set((input.cards ?? []).map((card: string) => card.trim()).filter(Boolean)));
   const name = input.name?.trim();
   const threshold = Number(input.threshold);
 
