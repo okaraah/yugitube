@@ -17,6 +17,7 @@
     "sync:cards": "tsx src/sync-cards.ts",
     "watch:ws": "tsx src/watch-websocket.ts",
     "migrate": "tsx src/migrate-to-postgres.ts",
+    "cleanup-packets": "tsx src/cleanup-packets.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.client.json --noEmit"
   },
   "engines": {

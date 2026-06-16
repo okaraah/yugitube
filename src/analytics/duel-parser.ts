@@ -62,7 +62,7 @@ export type MatchSummary = {
   insights: string[];
 };
 
-const IGNORED_PLAYS = new Set([
+export const IGNORED_PLAYS = new Set([
   "Add watcher",
   "Stop viewing",
   "View deck",

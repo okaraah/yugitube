@@ -3,7 +3,7 @@ const { Pool } = pkg;
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-import type { MatchSummary, DuelPacket } from "../analytics/duel-parser.js";
+import { IGNORED_PLAYS, type MatchSummary, type DuelPacket } from "../analytics/duel-parser.js";
 import type { CatalogCardRecord } from "../cards/catalog.js";
 
 export type ScraperAccountConfig = {
@@ -458,13 +458,20 @@ export class ScraperDatabase {
       }
 
       for (const [index, packet] of input.rawPackets.entries()) {
+        const playType = typeof packet.play === "string" ? packet.play : "<none>";
+        
+        // Skip irrelevant UI packets to save database space, unless they contain a message
+        if (IGNORED_PLAYS.has(playType) && !packet.message) {
+          continue;
+        }
+
         await client.query(`
           INSERT INTO duel_play_packets (duel_id, sequence, play, username, seconds, over_flag, packet_json)
           VALUES ($1, $2, $3, $4, $5, $6, $7)
         `, [
           input.duelId,
           index + 1,
-          typeof packet.play === "string" ? packet.play : "<none>",
+          playType,
           typeof packet.username === "string" ? packet.username : null,
           typeof packet.seconds === "number" ? packet.seconds : null,
           packet.over === true ? 1 : 0,
