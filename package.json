@@ -16,6 +16,7 @@
     "scrape:supervisor": "tsx src/scrape-supervisor.ts",
     "sync:cards": "tsx src/sync-cards.ts",
     "watch:ws": "tsx src/watch-websocket.ts",
+    "migrate": "tsx src/migrate-to-postgres.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.client.json --noEmit"
   },
   "engines": {
@@ -36,6 +37,8 @@
   },
   "dependencies": {
     "@formkit/auto-animate": "^0.9.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "better-sqlite3": "^12.11.1",
     "dotenv": "^17.4.2",
     "pg": "^8.21.0",
     "react": "^19.2.7",
