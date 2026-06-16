@@ -1,4 +1,5 @@
-import { DatabaseSync } from "node:sqlite";
+import pkg from 'pg';
+const { Pool } = pkg;
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -103,16 +104,14 @@ export type CatalogCardLookup = {
 };
 
 export class ScraperDatabase {
-  private readonly db: DatabaseSync;
+  private readonly pool: pkg.Pool;
 
-  constructor(private readonly filePath: string) {
-    mkdirSync(dirname(filePath), { recursive: true });
-    this.db = new DatabaseSync(filePath);
-    this.db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
+  constructor(connectionString: string) {
+    this.pool = new Pool({ connectionString });
   }
 
-  init() {
-    this.db.exec(`
+  async init() {
+    await this.pool.query(`
       CREATE TABLE IF NOT EXISTS scraper_accounts (
         username TEXT PRIMARY KEY,
         enabled INTEGER NOT NULL DEFAULT 1,
@@ -122,14 +121,14 @@ export class ScraperDatabase {
       );
 
       CREATE TABLE IF NOT EXISTS scraper_runs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         started_at TEXT NOT NULL,
         ended_at TEXT,
         status TEXT NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS worker_sessions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         run_id INTEGER NOT NULL,
         account_username TEXT NOT NULL,
         state TEXT NOT NULL,
@@ -233,90 +232,91 @@ export class ScraperDatabase {
     `);
   }
 
-  seedConfig(defaults: Record<string, unknown>) {
-    const statement = this.db.prepare(`
-      INSERT INTO scraper_config (key, value_json, updated_at)
-      VALUES (?, ?, ?)
-      ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
-    `);
-
+  async seedConfig(defaults: Record<string, unknown>) {
     const now = new Date().toISOString();
     for (const [key, value] of Object.entries(defaults)) {
-      statement.run(key, JSON.stringify(value), now);
+      await this.pool.query(`
+        INSERT INTO scraper_config (key, value_json, updated_at)
+        VALUES ($1, $2, $3)
+        ON CONFLICT(key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = EXCLUDED.updated_at
+      `, [key, JSON.stringify(value), now]);
     }
   }
 
-  upsertAccounts(accounts: ScraperAccountConfig[]) {
-    const statement = this.db.prepare(`
-      INSERT INTO scraper_accounts (username, enabled, last_status, last_error, updated_at)
-      VALUES (?, 1, 'configured', NULL, ?)
-      ON CONFLICT(username) DO UPDATE SET enabled = 1, updated_at = excluded.updated_at
-    `);
-
+  async upsertAccounts(accounts: ScraperAccountConfig[]) {
     const now = new Date().toISOString();
     for (const account of accounts) {
-      statement.run(account.username, now);
+      await this.pool.query(`
+        INSERT INTO scraper_accounts (username, enabled, last_status, last_error, updated_at)
+        VALUES ($1, 1, 'configured', NULL, $2)
+        ON CONFLICT(username) DO UPDATE SET enabled = 1, updated_at = EXCLUDED.updated_at
+      `, [account.username, now]);
     }
   }
 
-  startRun() {
+  async startRun() {
     const now = new Date().toISOString();
-    this.db.prepare(`INSERT INTO scraper_runs (started_at, status) VALUES (?, 'running')`).run(now);
-    return this.getLastInsertId();
+    const res = await this.pool.query(`INSERT INTO scraper_runs (started_at, status) VALUES ($1, 'running') RETURNING id`, [now]);
+    return res.rows[0].id;
   }
 
-  finishRun(runId: number, status: string) {
-    this.db.prepare(`UPDATE scraper_runs SET status = ?, ended_at = ? WHERE id = ?`).run(
+  async finishRun(runId: number, status: string) {
+    await this.pool.query(`UPDATE scraper_runs SET status = $1, ended_at = $2 WHERE id = $3`, [
       status,
       new Date().toISOString(),
       runId,
-    );
+    ]);
   }
 
-  createWorkerSession(runId: number, username: string) {
+  async createWorkerSession(runId: number, username: string) {
     const now = new Date().toISOString();
-    this.db
-      .prepare(`
+    const res = await this.pool.query(`
         INSERT INTO worker_sessions (run_id, account_username, state, current_duel_id, last_error, started_at, updated_at)
-        VALUES (?, ?, 'starting', NULL, NULL, ?, ?)
-      `)
-      .run(runId, username, now, now);
-    return this.getLastInsertId();
+        VALUES ($1, $2, 'starting', NULL, NULL, $3, $4)
+        RETURNING id
+      `, [runId, username, now, now]);
+    return res.rows[0].id;
   }
 
-  updateWorkerSession(sessionId: number, state: string, currentDuelId: number | null, lastError: string | null) {
-    this.db
-      .prepare(`
+  async updateWorkerSession(sessionId: number, state: string, currentDuelId: number | null, lastError: string | null) {
+    await this.pool.query(`
         UPDATE worker_sessions
-        SET state = ?, current_duel_id = ?, last_error = ?, updated_at = ?
-        WHERE id = ?
-      `)
-      .run(state, currentDuelId, lastError, new Date().toISOString(), sessionId);
+        SET state = $1, current_duel_id = $2, last_error = $3, updated_at = $4
+        WHERE id = $5
+      `, [state, currentDuelId, lastError, new Date().toISOString(), sessionId]);
   }
 
-  updateAccountStatus(username: string, status: string, lastError: string | null = null) {
-    this.db
-      .prepare(`UPDATE scraper_accounts SET last_status = ?, last_error = ?, updated_at = ? WHERE username = ?`)
-      .run(status, lastError, new Date().toISOString(), username);
+  async updateAccountStatus(username: string, status: string, lastError: string | null = null) {
+    await this.pool.query(`UPDATE scraper_accounts SET last_status = $1, last_error = $2, updated_at = $3 WHERE username = $4`, [status, lastError, new Date().toISOString(), username]);
   }
 
-  upsertCardsCatalog(cards: CatalogCardRecord[]) {
+  async listActiveWorkers(): Promise<WorkerSessionRow[]> {
+    const runRes = await this.pool.query(`SELECT id FROM scraper_runs ORDER BY id DESC LIMIT 1`);
+    if (runRes.rowCount === 0) return [];
+    
+    const res = await this.pool.query(`
+      SELECT account_username as "accountUsername", state, current_duel_id as "currentDuelId", last_error as "lastError", updated_at as "updatedAt"
+      FROM worker_sessions
+      WHERE run_id = $1
+    `, [runRes.rows[0].id]);
+    return res.rows as WorkerSessionRow[];
+  }
+
+  async upsertCardsCatalog(cards: CatalogCardRecord[]) {
     const now = new Date().toISOString();
-    const statement = this.db.prepare(`
-      INSERT INTO cards_catalog (card_id, name, treated_as, card_type, attribute, type_line, raw_json, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(card_id) DO UPDATE SET
-        name = excluded.name,
-        treated_as = excluded.treated_as,
-        card_type = excluded.card_type,
-        attribute = excluded.attribute,
-        type_line = excluded.type_line,
-        raw_json = excluded.raw_json,
-        updated_at = excluded.updated_at
-    `);
-
     for (const card of cards) {
-      statement.run(
+      await this.pool.query(`
+        INSERT INTO cards_catalog (card_id, name, treated_as, card_type, attribute, type_line, raw_json, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT(card_id) DO UPDATE SET
+          name = EXCLUDED.name,
+          treated_as = EXCLUDED.treated_as,
+          card_type = EXCLUDED.card_type,
+          attribute = EXCLUDED.attribute,
+          type_line = EXCLUDED.type_line,
+          raw_json = EXCLUDED.raw_json,
+          updated_at = EXCLUDED.updated_at
+      `, [
         card.cardId,
         card.name,
         card.treatedAs,
@@ -325,17 +325,17 @@ export class ScraperDatabase {
         card.typeLine,
         card.rawJson,
         now,
-      );
+      ]);
     }
   }
 
-  isDuelCompleted(duelId: number) {
-    const row = this.db.prepare(`SELECT status FROM duels WHERE duel_id = ?`).get(duelId) as { status?: string } | undefined;
-    return row?.status === "completed";
+  async isDuelCompleted(duelId: number) {
+    const res = await this.pool.query(`SELECT status FROM duels WHERE duel_id = $1`, [duelId]);
+    return res.rows[0]?.status === "completed";
   }
 
-  persistCompletedDuel(input: PersistCompletedDuelInput) {
-    if (this.isDuelCompleted(input.duelId)) {
+  async persistCompletedDuel(input: PersistCompletedDuelInput) {
+    if (await this.isDuelCompleted(input.duelId)) {
       return false;
     }
 
@@ -343,34 +343,34 @@ export class ScraperDatabase {
     writeFileSync(input.rawLogPath, input.rawPackets.map((packet) => JSON.stringify(packet)).join("\n") + "\n", "utf8");
 
     const now = new Date().toISOString();
-    this.db.exec("BEGIN");
+    const client = await this.pool.connect();
     try {
-      this.db.prepare(`DELETE FROM duel_play_packets WHERE duel_id = ?`).run(input.duelId);
-      this.db.prepare(`DELETE FROM duel_seen_cards WHERE duel_id = ?`).run(input.duelId);
-      this.db.prepare(`DELETE FROM duel_player_summaries WHERE duel_id = ?`).run(input.duelId);
-      this.db.prepare(`DELETE FROM duel_games WHERE duel_id = ?`).run(input.duelId);
-      this.db.prepare(`DELETE FROM duel_summaries WHERE duel_id = ?`).run(input.duelId);
+      await client.query("BEGIN");
+      
+      await client.query(`DELETE FROM duel_play_packets WHERE duel_id = $1`, [input.duelId]);
+      await client.query(`DELETE FROM duel_seen_cards WHERE duel_id = $1`, [input.duelId]);
+      await client.query(`DELETE FROM duel_player_summaries WHERE duel_id = $1`, [input.duelId]);
+      await client.query(`DELETE FROM duel_games WHERE duel_id = $1`, [input.duelId]);
+      await client.query(`DELETE FROM duel_summaries WHERE duel_id = $1`, [input.duelId]);
 
-      this.db
-        .prepare(`
+      await client.query(`
           INSERT INTO duels (
             duel_id, assigned_account, status, winner, loser, final_score, games_played, replay_url,
             raw_log_path, started_at, completed_at, created_at, updated_at
-          ) VALUES (?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES ($1, $2, 'completed', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
           ON CONFLICT(duel_id) DO UPDATE SET
-            assigned_account = excluded.assigned_account,
-            status = excluded.status,
-            winner = excluded.winner,
-            loser = excluded.loser,
-            final_score = excluded.final_score,
-            games_played = excluded.games_played,
-            replay_url = excluded.replay_url,
-            raw_log_path = excluded.raw_log_path,
-            started_at = excluded.started_at,
-            completed_at = excluded.completed_at,
-            updated_at = excluded.updated_at
-        `)
-        .run(
+            assigned_account = EXCLUDED.assigned_account,
+            status = EXCLUDED.status,
+            winner = EXCLUDED.winner,
+            loser = EXCLUDED.loser,
+            final_score = EXCLUDED.final_score,
+            games_played = EXCLUDED.games_played,
+            replay_url = EXCLUDED.replay_url,
+            raw_log_path = EXCLUDED.raw_log_path,
+            started_at = EXCLUDED.started_at,
+            completed_at = EXCLUDED.completed_at,
+            updated_at = EXCLUDED.updated_at
+        `, [
           input.duelId,
           input.assignedAccount,
           input.matchSummary.winner,
@@ -383,16 +383,14 @@ export class ScraperDatabase {
           input.completedAt,
           now,
           now,
-        );
+        ]);
 
-      this.db
-        .prepare(`
+      await client.query(`
           INSERT INTO duel_summaries (
             duel_id, winner, loser, final_score, games_played, turns_observed, total_packets, real_plays,
             probable_archetypes_json, summary_json, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `)
-        .run(
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        `, [
           input.duelId,
           input.matchSummary.winner,
           input.matchSummary.loser,
@@ -404,15 +402,14 @@ export class ScraperDatabase {
           JSON.stringify(input.probableArchetypes),
           JSON.stringify(input.matchSummary),
           now,
-        );
+        ]);
 
-      const gameStatement = this.db.prepare(`
-        INSERT INTO duel_games (
-          duel_id, game_number, score_at_start, starting_player, winner, loser, ended_match, total_packets, real_plays, raw_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
       for (const game of input.matchSummary.games) {
-        gameStatement.run(
+        await client.query(`
+          INSERT INTO duel_games (
+            duel_id, game_number, score_at_start, starting_player, winner, loser, ended_match, total_packets, real_plays, raw_json
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `, [
           input.duelId,
           game.gameNumber,
           game.scoreAtStart,
@@ -423,16 +420,15 @@ export class ScraperDatabase {
           game.totalPackets,
           game.realPlays,
           JSON.stringify(game),
-        );
+        ]);
       }
 
-      const playerStatement = this.db.prepare(`
-        INSERT INTO duel_player_summaries (
-          duel_id, username, won, probable_archetype, unique_cards_count, real_plays, raw_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
       for (const player of input.matchSummary.players) {
-        playerStatement.run(
+        await client.query(`
+          INSERT INTO duel_player_summaries (
+            duel_id, username, won, probable_archetype, unique_cards_count, real_plays, raw_json
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `, [
           input.duelId,
           player,
           input.matchSummary.winner === player ? 1 : 0,
@@ -445,29 +441,27 @@ export class ScraperDatabase {
             uniqueCards: input.matchSummary.cardsByPlayer[player] ?? [],
             realPlays: input.matchSummary.perPlayerRealPlays[player] ?? 0,
           }),
-        );
+        ]);
       }
 
-      const cardStatement = this.db.prepare(`
-        INSERT INTO duel_seen_cards (duel_id, username, card_name, total_count, actions_json)
-        VALUES (?, ?, ?, ?, ?)
-      `);
       for (const cardSummary of input.matchSummary.topCards) {
-        cardStatement.run(
+        await client.query(`
+          INSERT INTO duel_seen_cards (duel_id, username, card_name, total_count, actions_json)
+          VALUES ($1, $2, $3, $4, $5)
+        `, [
           input.duelId,
           cardSummary.owner,
           cardSummary.cardName,
           cardSummary.total,
           JSON.stringify(cardSummary.actions),
-        );
+        ]);
       }
 
-      const playStatement = this.db.prepare(`
-        INSERT INTO duel_play_packets (duel_id, sequence, play, username, seconds, over_flag, packet_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
-      input.rawPackets.forEach((packet, index) => {
-        playStatement.run(
+      for (const [index, packet] of input.rawPackets.entries()) {
+        await client.query(`
+          INSERT INTO duel_play_packets (duel_id, sequence, play, username, seconds, over_flag, packet_json)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `, [
           input.duelId,
           index + 1,
           typeof packet.play === "string" ? packet.play : "<none>",
@@ -475,37 +469,37 @@ export class ScraperDatabase {
           typeof packet.seconds === "number" ? packet.seconds : null,
           packet.over === true ? 1 : 0,
           JSON.stringify(packet),
-        );
-      });
+        ]);
+      }
 
-      this.db.exec("COMMIT");
+      await client.query("COMMIT");
       return true;
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      await client.query("ROLLBACK");
       throw error;
+    } finally {
+      client.release();
     }
   }
 
-  persistFailedDuelAttempt(input: PersistFailedDuelAttemptInput) {
+  async persistFailedDuelAttempt(input: PersistFailedDuelAttemptInput) {
     mkdirSync(dirname(input.rawLogPath), { recursive: true });
     writeFileSync(input.rawLogPath, input.rawPackets.map((packet) => JSON.stringify(packet)).join("\n") + (input.rawPackets.length ? "\n" : ""), "utf8");
 
     const now = new Date().toISOString();
-    this.db
-      .prepare(`
+    await this.pool.query(`
         INSERT INTO duels (
           duel_id, assigned_account, status, winner, loser, final_score, games_played, replay_url,
           raw_log_path, started_at, completed_at, created_at, updated_at
-        ) VALUES (?, ?, 'failed', NULL, NULL, NULL, 0, ?, ?, ?, ?, ?, ?)
+        ) VALUES ($1, $2, 'failed', NULL, NULL, NULL, 0, $3, $4, $5, $6, $7, $8)
         ON CONFLICT(duel_id) DO UPDATE SET
-          assigned_account = excluded.assigned_account,
-          status = excluded.status,
-          raw_log_path = excluded.raw_log_path,
-          started_at = COALESCE(duels.started_at, excluded.started_at),
-          completed_at = excluded.completed_at,
-          updated_at = excluded.updated_at
-      `)
-      .run(
+          assigned_account = EXCLUDED.assigned_account,
+          status = EXCLUDED.status,
+          raw_log_path = EXCLUDED.raw_log_path,
+          started_at = COALESCE(duels.started_at, EXCLUDED.started_at),
+          completed_at = EXCLUDED.completed_at,
+          updated_at = EXCLUDED.updated_at
+      `, [
         input.duelId,
         input.assignedAccount,
         `https://www.duelingbook.com/replay?id=${input.duelId}`,
@@ -514,20 +508,18 @@ export class ScraperDatabase {
         input.failedAt,
         now,
         now,
-      );
+      ]);
 
-    this.db
-      .prepare(`
+    await this.pool.query(`
         INSERT INTO duel_summaries (
           duel_id, winner, loser, final_score, games_played, turns_observed, total_packets, real_plays,
           probable_archetypes_json, summary_json, updated_at
-        ) VALUES (?, NULL, NULL, NULL, 0, 0, ?, 0, '{}', ?, ?)
+        ) VALUES ($1, NULL, NULL, NULL, 0, 0, $2, 0, '{}', $3, $4)
         ON CONFLICT(duel_id) DO UPDATE SET
-          total_packets = excluded.total_packets,
-          summary_json = excluded.summary_json,
-          updated_at = excluded.updated_at
-      `)
-      .run(
+          total_packets = EXCLUDED.total_packets,
+          summary_json = EXCLUDED.summary_json,
+          updated_at = EXCLUDED.updated_at
+      `, [
         input.duelId,
         input.rawPackets.length,
         JSON.stringify({
@@ -537,26 +529,19 @@ export class ScraperDatabase {
           rawPacketCount: input.rawPackets.length,
         }),
         now,
-      );
+      ]);
   }
 
-  getDashboardStats(): DashboardStats {
-    const row = this.db
-      .prepare(`
+  async getDashboardStats(): Promise<DashboardStats> {
+    const res = await this.pool.query(`
         SELECT
           (SELECT COUNT(*) FROM duels) AS total_duels,
           (SELECT COUNT(*) FROM duels WHERE status = 'completed') AS completed_duels,
           (SELECT COUNT(*) FROM duels WHERE status = 'failed') AS failed_duels,
           (SELECT COUNT(*) FROM duel_play_packets) AS total_packets,
           (SELECT COUNT(*) FROM cards_catalog) AS total_cards
-      `)
-      .get() as {
-        total_duels: number;
-        completed_duels: number;
-        failed_duels: number;
-        total_packets: number;
-        total_cards: number;
-      };
+      `);
+    const row = res.rows[0] || {};
 
     return {
       totalDuels: Number(row.total_duels ?? 0),
@@ -567,9 +552,8 @@ export class ScraperDatabase {
     };
   }
 
-  listRecentDuels(limit = 100): DuelListItem[] {
-    const rows = this.db
-      .prepare(`
+  async listRecentDuels(limit = 100): Promise<DuelListItem[]> {
+    const res = await this.pool.query(`
         SELECT
           d.duel_id,
           d.status,
@@ -588,26 +572,10 @@ export class ScraperDatabase {
         FROM duels d
         LEFT JOIN duel_summaries s ON s.duel_id = d.duel_id
         ORDER BY COALESCE(d.completed_at, d.updated_at) DESC
-        LIMIT ?
-      `)
-      .all(limit) as Array<{
-      duel_id: number;
-      status: string;
-      winner: string | null;
-      loser: string | null;
-      final_score: string | null;
-      games_played: number;
-      assigned_account: string;
-      replay_url: string | null;
-      started_at: string | null;
-      completed_at: string | null;
-      updated_at: string;
-      total_packets: number | null;
-      real_plays: number | null;
-      probable_archetypes_json: string | null;
-    }>;
+        LIMIT $1
+      `, [limit]);
 
-    return rows.map((row) => ({
+    return res.rows.map((row) => ({
       duelId: Number(row.duel_id),
       status: row.status,
       winner: row.winner,
@@ -625,9 +593,8 @@ export class ScraperDatabase {
     }));
   }
 
-  getDuelDetail(duelId: number): DuelDetail | null {
-    const row = this.db
-      .prepare(`
+  async getDuelDetail(duelId: number): Promise<DuelDetail | null> {
+    const res = await this.pool.query(`
         SELECT
           d.duel_id,
           d.status,
@@ -644,26 +611,10 @@ export class ScraperDatabase {
           s.summary_json
         FROM duels d
         LEFT JOIN duel_summaries s ON s.duel_id = d.duel_id
-        WHERE d.duel_id = ?
-      `)
-      .get(duelId) as
-      | {
-          duel_id: number;
-          status: string;
-          winner: string | null;
-          loser: string | null;
-          final_score: string | null;
-          games_played: number;
-          assigned_account: string;
-          replay_url: string | null;
-          raw_log_path: string | null;
-          started_at: string | null;
-          completed_at: string | null;
-          updated_at: string;
-          summary_json: string | null;
-        }
-      | undefined;
+        WHERE d.duel_id = $1
+      `, [duelId]);
 
+    const row = res.rows[0];
     if (!row) {
       return null;
     }
@@ -685,22 +636,15 @@ export class ScraperDatabase {
     };
   }
 
-  getDuelSeenCards(duelId: number): DuelSeenCardRow[] {
-    const rows = this.db
-      .prepare(`
+  async getDuelSeenCards(duelId: number): Promise<DuelSeenCardRow[]> {
+    const res = await this.pool.query(`
         SELECT username, card_name, total_count, actions_json
         FROM duel_seen_cards
-        WHERE duel_id = ?
+        WHERE duel_id = $1
         ORDER BY username ASC, total_count DESC, card_name ASC
-      `)
-      .all(duelId) as Array<{
-      username: string;
-      card_name: string;
-      total_count: number;
-      actions_json: string;
-    }>;
+      `, [duelId]);
 
-    return rows.map((row) => ({
+    return res.rows.map((row) => ({
       username: row.username,
       cardName: row.card_name,
       totalCount: Number(row.total_count),
@@ -708,24 +652,15 @@ export class ScraperDatabase {
     }));
   }
 
-  getDuelPackets(duelId: number): DuelPacketRow[] {
-    const rows = this.db
-      .prepare(`
+  async getDuelPackets(duelId: number): Promise<DuelPacketRow[]> {
+    const res = await this.pool.query(`
         SELECT sequence, play, username, seconds, over_flag, packet_json
         FROM duel_play_packets
-        WHERE duel_id = ?
+        WHERE duel_id = $1
         ORDER BY sequence ASC
-      `)
-      .all(duelId) as Array<{
-      sequence: number;
-      play: string;
-      username: string | null;
-      seconds: number | null;
-      over_flag: number;
-      packet_json: string;
-    }>;
+      `, [duelId]);
 
-    return rows.map((row) => ({
+    return res.rows.map((row) => ({
       sequence: Number(row.sequence),
       play: row.play,
       username: row.username,
@@ -735,9 +670,8 @@ export class ScraperDatabase {
     }));
   }
 
-  listLatestWorkerSessions(): WorkerSessionRow[] {
-    const rows = this.db
-      .prepare(`
+  async listLatestWorkerSessions(): Promise<WorkerSessionRow[]> {
+    const res = await this.pool.query(`
         SELECT ws.account_username, ws.state, ws.current_duel_id, ws.last_error, ws.updated_at
         FROM worker_sessions ws
         INNER JOIN (
@@ -746,16 +680,9 @@ export class ScraperDatabase {
           GROUP BY account_username
         ) latest ON latest.max_id = ws.id
         ORDER BY ws.account_username ASC
-      `)
-      .all() as Array<{
-      account_username: string;
-      state: string;
-      current_duel_id: number | null;
-      last_error: string | null;
-      updated_at: string;
-    }>;
+      `);
 
-    return rows.map((row) => ({
+    return res.rows.map((row) => ({
       accountUsername: row.account_username,
       state: row.state,
       currentDuelId: row.current_duel_id === null ? null : Number(row.current_duel_id),
@@ -764,26 +691,20 @@ export class ScraperDatabase {
     }));
   }
 
-  lookupCardsByNames(names: string[]) {
+  async lookupCardsByNames(names: string[]) {
     const uniqueNames = Array.from(new Set(names)).filter(Boolean);
     if (uniqueNames.length === 0) {
       return new Map<string, CatalogCardLookup>();
     }
 
-    const placeholders = uniqueNames.map(() => "?").join(", ");
-    const rows = this.db
-      .prepare(`
+    const res = await this.pool.query(`
         SELECT card_id, name
         FROM cards_catalog
-        WHERE name IN (${placeholders})
-      `)
-      .all(...uniqueNames) as Array<{
-      card_id: number;
-      name: string;
-    }>;
+        WHERE name = ANY($1::text[])
+      `, [uniqueNames]);
 
     const output = new Map<string, CatalogCardLookup>();
-    for (const row of rows) {
+    for (const row of res.rows) {
       output.set(row.name, {
         cardId: Number(row.card_id),
         name: row.name,
@@ -792,12 +713,7 @@ export class ScraperDatabase {
     return output;
   }
 
-  close() {
-    this.db.close();
-  }
-
-  private getLastInsertId() {
-    const row = this.db.prepare(`SELECT last_insert_rowid() AS id`).get() as { id: number };
-    return Number(row.id);
+  async close() {
+    await this.pool.end();
   }
 }

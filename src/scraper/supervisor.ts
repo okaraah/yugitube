@@ -62,13 +62,13 @@ export class DuelScraperSupervisor {
   }
 
   async start() {
-    this.db.init();
-    this.db.seedConfig({
+    await this.db.init();
+    await this.db.seedConfig({
       qualifying_filter: this.filter,
       watcher_accounts: this.accounts.map((account) => account.username),
     });
-    this.db.upsertAccounts(this.accounts);
-    this.runId = this.db.startRun();
+    await this.db.upsertAccounts(this.accounts);
+    this.runId = await this.db.startRun();
 
     await this.syncCards("startup");
     this.cardSyncTimer = setInterval(() => {
@@ -102,15 +102,15 @@ export class DuelScraperSupervisor {
         await stopWorker();
       }
 
-      this.db.finishRun(this.runId, "stopped");
-      this.db.close();
+      await this.db.finishRun(this.runId, "stopped");
+      await this.db.close();
     };
 
     process.once("SIGINT", () => void shutdown("SIGINT"));
     process.once("SIGTERM", () => void shutdown("SIGTERM"));
   }
 
-  tryAssignDuel(workerUsername: string, duel: LobbyDuelSummary) {
+  async tryAssignDuel(workerUsername: string, duel: LobbyDuelSummary) {
     const cooldownUntil = this.cooldownDuels.get(duel.id) ?? 0;
     if (cooldownUntil > Date.now()) {
       return false;
@@ -120,7 +120,7 @@ export class DuelScraperSupervisor {
       return false;
     }
 
-    if (this.db.isDuelCompleted(duel.id)) {
+    if (await this.db.isDuelCompleted(duel.id)) {
       return false;
     }
 
@@ -145,7 +145,7 @@ export class DuelScraperSupervisor {
     const matchSummary = parseMatch(`duel-${input.duelId}`, input.rawPackets);
     const replayUrl = `https://www.duelingbook.com/replay?id=${input.duelId}`;
     const rawLogPath = resolve(`.runtime/duels/${input.duelId}.ndjson`);
-    const persisted = this.db.persistCompletedDuel({
+    const persisted = await this.db.persistCompletedDuel({
       duelId: input.duelId,
       assignedAccount: input.assignedAccount,
       rawPackets: input.rawPackets,
@@ -194,7 +194,7 @@ class WatchWorker {
   private readonly account: ScraperAccountConfig;
   private readonly filter: QualifyingFilter;
   private readonly cookieFile: string;
-  private readonly sessionId: number;
+  private sessionId: number = 0;
   private socket: WebSocket | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private pingStartedAt: number | null = null;
@@ -214,10 +214,10 @@ class WatchWorker {
     this.account = options.account;
     this.filter = options.filter;
     this.cookieFile = resolve(`.runtime/sessions/${this.account.username}.json`);
-    this.sessionId = this.db.createWorkerSession(this.runId, this.account.username);
   }
 
   async start() {
+    this.sessionId = await this.db.createWorkerSession(this.runId, this.account.username);
     await this.connectLoop();
   }
 
@@ -239,7 +239,7 @@ class WatchWorker {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         this.setState("reconnecting", this.activeDuelId, message);
-        this.db.updateAccountStatus(this.account.username, "reconnecting", message);
+        void this.db.updateAccountStatus(this.account.username, "reconnecting", message);
         const delayMs = Math.min(RETRY_BACKOFF_BASE_MS * 2 ** this.retryCount, RETRY_BACKOFF_MAX_MS);
         console.error(`[worker:${this.account.username}] reconnecting after error: ${message}`);
         this.retryCount += 1;
@@ -250,7 +250,7 @@ class WatchWorker {
 
   private async connectOnce() {
     this.setState("connecting", this.activeDuelId, null);
-    this.db.updateAccountStatus(this.account.username, "connecting");
+    void this.db.updateAccountStatus(this.account.username, "connecting");
 
     const cookieJar = await loadCookieJar(this.cookieFile);
     const client = new DuelingBookClient(cookieJar);
@@ -298,7 +298,7 @@ class WatchWorker {
           const failedStartedAt = this.activeStartedAt ?? new Date().toISOString();
           const failedRawPackets = [...this.rawPackets];
           const failedRawLogPath = resolve(`.runtime/duels/incomplete/${failedDuelId}-${Date.now()}.ndjson`);
-          this.db.persistFailedDuelAttempt({
+          void this.db.persistFailedDuelAttempt({
             duelId: failedDuelId,
             assignedAccount: this.account.username,
             rawPackets: failedRawPackets,
@@ -365,7 +365,7 @@ class WatchWorker {
         switch (action) {
           case "Connected":
             this.setState("idle", null, null);
-            this.db.updateAccountStatus(this.account.username, "idle");
+            void this.db.updateAccountStatus(this.account.username, "idle");
             this.loadWatching();
             break;
 
@@ -376,7 +376,7 @@ class WatchWorker {
         case "Load duels":
             this.lobbySnapshotLoaded = true;
             if (this.state === "idle") {
-              this.db.updateAccountStatus(this.account.username, "idle");
+              void this.db.updateAccountStatus(this.account.username, "idle");
             }
             break;
 
@@ -473,7 +473,7 @@ class WatchWorker {
       this.rawPackets = [];
       this.pendingDuel = null;
       this.setState("recording", duelId, null);
-      this.db.updateAccountStatus(this.account.username, "recording");
+      void this.db.updateAccountStatus(this.account.username, "recording");
       console.log(`[worker:${this.account.username}] recording duel id=${duelId} status=${status} score=${score}`);
       return;
     }
@@ -515,7 +515,7 @@ class WatchWorker {
     this.activeDuelId = null;
     this.activeStartedAt = null;
     this.setState("idle", null, null);
-    this.db.updateAccountStatus(this.account.username, "idle");
+    void this.db.updateAccountStatus(this.account.username, "idle");
     console.log(
       `[worker:${this.account.username}] completed duel id=${duelId} winner=${result.matchSummary.winner ?? "unknown"} score=${result.matchSummary.finalScore ?? "unknown"}`,
     );
@@ -539,6 +539,6 @@ class WatchWorker {
 
   private setState(state: WorkerState, currentDuelId: number | null, lastError: string | null) {
     this.state = state;
-    this.db.updateWorkerSession(this.sessionId, state, currentDuelId, lastError);
+    void this.db.updateWorkerSession(this.sessionId, state, currentDuelId, lastError);
   }
 }

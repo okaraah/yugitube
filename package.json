@@ -5,6 +5,9 @@
   "type": "module",
   "description": "Minimal browserless DuelingBook login client.",
   "scripts": {
+    "build": "npm run build:client && npm run typecheck",
+    "build:client": "vite build",
+    "dev:client": "vite",
     "ingest:duel-log": "tsx src/ingest-duel-log.ts",
     "parse:duel": "tsx src/parse-duel-log.ts",
     "login": "tsx src/login.ts",
@@ -14,19 +17,31 @@
     "sync:cards": "tsx src/sync-cards.ts",
     "web": "tsx src/web.ts",
     "watch:ws": "tsx src/watch-websocket.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.client.json --noEmit"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",
+    "@types/pg": "^8.20.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.18.1",
+    "@vercel/node": "^5.8.17",
+    "@vitejs/plugin-react": "^6.0.2",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
+    "vite": "^8.0.16",
     "ws": "^8.18.3"
   },
   "dependencies": {
-    "dotenv": "^17.4.2"
+    "@aws-sdk/client-s3": "^3.1068.0",
+    "@formkit/auto-animate": "^0.9.0",
+    "dotenv": "^17.4.2",
+    "pg": "^8.21.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.17.0"
   }
 }

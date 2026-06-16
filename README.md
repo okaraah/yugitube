@@ -98,13 +98,38 @@ One-off card sync:
 npm run sync:cards -- --db-path .runtime/yugitube.sqlite
 ```
 
-Minimal local website:
+Build the React client:
+
+```bash
+npm run build:client
+```
+
+Usable replay website:
 
 ```bash
 npm run web -- --db-path .runtime/yugitube.sqlite --port 3000
 ```
 
 Then open [http://127.0.0.1:3000](http://127.0.0.1:3000).
+
+Required for the admin panel:
+
+```bash
+YUGITUBE_ADMIN_PASSWORD=change-me
+```
+
+Optional:
+
+```bash
+YUGITUBE_ADMIN_SESSION_SECRET=separate-session-secret
+```
+
+The site now includes:
+
+- a public replay browser with filters for players, archetypes, cards, and ratings
+- replay detail pages with matchup breakdowns, archetype badges, card galleries, and an expandable action feed
+- an admin panel at `/admin/archetypes` for archetype-group CRUD and automatic replay reclassification
+- local on-demand caching of low-resolution YGOPRODeck card images
 
 Passive lobby capture:
 
