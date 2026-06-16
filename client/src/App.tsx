@@ -907,10 +907,11 @@ function ReplayDetailPage() {
           <hr className="divider" />
 
           {data.replayUrl ? (
-            <a 
-              href={data.replayUrl} 
-              target="_blank" 
-              rel="noreferrer" 
+            <button 
+              onClick={() => {
+                setShowActions(true);
+                setTimeout(() => document.getElementById("interactive-replay-section")?.scrollIntoView({ behavior: "smooth" }), 100);
+              }}
               style={{ 
                 position: "fixed", bottom: "32px", left: "32px", 
                 zIndex: 100, background: "var(--accent)", color: "var(--bg)", 
@@ -925,7 +926,7 @@ function ReplayDetailPage() {
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
               Watch Replay
-            </a>
+            </button>
           ) : null}
 
           {(() => {
@@ -1042,12 +1043,26 @@ function ReplayDetailPage() {
             );
           })()}
 
-          <section className="table-section">
+          <section className="table-section" id="interactive-replay-section">
             <div className="section-head">
               <h2>Interactive Replay</h2>
-              <button className="btn-ghost btn-sm" onClick={() => setShowActions((value) => !value)}>
-                {showActions ? "Hide" : "Show"} replay
-              </button>
+              <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                {data.replayUrl ? (
+                  <a 
+                    href={data.replayUrl} 
+                    target="_blank" 
+                    rel="noreferrer" 
+                    className="btn-ghost btn-sm" 
+                    style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                    External Link
+                  </a>
+                ) : null}
+                <button className="btn-ghost btn-sm" onClick={() => setShowActions((value) => !value)}>
+                  {showActions ? "Hide" : "Show"} replay
+                </button>
+              </div>
             </div>
             {showActions ? (
               <div className="iframe-wrap" style={{ width: "100%", overflow: "hidden", borderRadius: "12px", border: "1px solid var(--border)", background: "#000", display: "flex", justifyContent: "center" }}>
