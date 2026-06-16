@@ -294,12 +294,14 @@ function SuggestionMenu({
   onSelect: (value: string, kind: string) => void;
   selectedValues?: Set<string>;
 }) {
+  const [menuRef] = useAutoAnimate<HTMLDivElement>();
+
   if (suggestions.length === 0) {
     return null;
   }
 
   return (
-    <div className="suggestion-menu">
+    <div className="suggestion-menu" ref={menuRef}>
       {suggestions.map((suggestion) => (
         <button
           key={`${suggestion.kind}:${suggestion.value}`}
@@ -426,6 +428,9 @@ function ReplayListPage() {
   const [searchSuggestions, setSearchSuggestions] = useState<SearchSuggestion[]>([]);
   const [highlightedArchetypes, setHighlightedArchetypes] = useState<HighlightedArchetype[]>([]);
   const [gridRef] = useAutoAnimate<HTMLDivElement>();
+  const [currentFiltersRef] = useAutoAnimate<HTMLDivElement>();
+  const [trendingRef] = useAutoAnimate<HTMLDivElement>();
+  const [pageShellRef] = useAutoAnimate<HTMLDivElement>();
 
   const queryString = params.toString();
   
@@ -602,51 +607,12 @@ function ReplayListPage() {
         <p>Search recent ladder matches, view decks, and analyze games.</p>
       </header>
 
-      {(params.getAll("archetype").length > 0 || params.getAll("card").length > 0) ? (() => {
-        const activeArchetypes = params.getAll("archetype");
-        const activeCards = params.getAll("card");
-        return (
-          <div className="current-filters-section" style={{ marginBottom: "20px", padding: "16px", background: "var(--surface)", borderRadius: "8px", border: "1px solid var(--border)" }}>
-            <div style={{ fontSize: "0.85rem", textTransform: "uppercase", fontWeight: 700, color: "var(--text-3)", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              Current Filters
-              <button className="btn-ghost btn-sm" onClick={() => {
-                const next = new URLSearchParams(params);
-                next.delete("archetype");
-                next.delete("card");
-                next.set("page", "1");
-                setParams(next);
-              }}>Clear all</button>
-            </div>
-            <div className="highlight-strip" style={{ margin: 0 }}>
-              {activeArchetypes.map(arch => {
-                const meta = data?.filterMetadata?.find(m => m.name === arch && m.kind === "archetype");
-                return (
-                  <button key={`active-arch-${arch}`} type="button" className="highlight-pill active" onClick={() => toggleArchetype(arch)}>
-                    {meta?.imageCroppedPath ? <img src={meta.imageCroppedPath} alt={arch} /> : <div className="archetype-fallback" />}
-                    <span>{arch}</span>
-                  </button>
-                );
-              })}
-              {activeCards.map(card => {
-                const meta = data?.filterMetadata?.find(m => m.name === card && m.kind === "card");
-                return (
-                  <button key={`active-card-${card}`} type="button" className="highlight-pill active" onClick={() => toggleCard(card)} style={{ borderLeft: "4px solid var(--accent)" }}>
-                    {meta?.imageCroppedPath ? <img src={meta.imageCroppedPath} alt={card} /> : <div className="archetype-fallback" />}
-                    <span>{card}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })() : null}
-
       {highlightedArchetypes.length > 0 ? (
         <div style={{ marginBottom: "24px" }}>
           <div style={{ fontSize: "0.85rem", textTransform: "uppercase", fontWeight: 700, color: "var(--text-3)", marginBottom: "12px", marginLeft: "4px" }}>
             Trending Archetypes
           </div>
-          <div className="highlight-strip" style={{ margin: 0 }}>
+          <div className="highlight-strip" style={{ margin: 0 }} ref={trendingRef}>
             {highlightedArchetypes.map((archetype) => {
               const active = params.getAll("archetype").includes(archetype.name);
               return (
@@ -705,6 +671,36 @@ function ReplayListPage() {
             <option value="rating_desc">Highest average rating</option>
           </select>
         </label>
+      </div>
+
+      <div ref={pageShellRef}>
+        {(params.getAll("card").length > 0) ? (() => {
+          const activeCards = params.getAll("card");
+          return (
+            <div className="current-filters-section" style={{ marginBottom: "20px", padding: "16px", background: "var(--surface)", borderRadius: "8px", border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: "0.85rem", textTransform: "uppercase", fontWeight: 700, color: "var(--text-3)", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                Current Filters
+                <button className="btn-ghost btn-sm" onClick={() => {
+                  const next = new URLSearchParams(params);
+                  next.delete("card");
+                  next.set("page", "1");
+                  setParams(next);
+                }}>Clear cards</button>
+              </div>
+              <div className="highlight-strip" style={{ margin: 0 }} ref={currentFiltersRef}>
+                {activeCards.map(card => {
+                  const meta = data?.filterMetadata?.find(m => m.name === card && m.kind === "card");
+                  return (
+                    <button key={`active-card-${card}`} type="button" className="highlight-pill active" onClick={() => toggleCard(card)} style={{ borderLeft: "4px solid var(--accent)" }}>
+                      {meta?.imageCroppedPath ? <img src={meta.imageCroppedPath} alt={card} /> : <div className="archetype-fallback" />}
+                      <span>{card}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })() : null}
       </div>
 
       <div className="section-head">
@@ -1266,6 +1262,9 @@ function AdminArchetypesPage() {
     cards: [] as string[],
   });
 
+  const [selectedCardsRef] = useAutoAnimate<HTMLDivElement>();
+  const [groupListRef] = useAutoAnimate<HTMLDivElement>();
+
   const isEditing = form.id.length > 0;
 
   async function loadAll() {
@@ -1512,7 +1511,7 @@ function AdminArchetypesPage() {
                 )}
               </div>
             </label>
-            <div className="selected-cards">
+            <div className="selected-cards" ref={selectedCardsRef}>
               {form.cards.map((card) => (
                 <div className="selected-card" key={card}>
                   <span>{card}</span>
@@ -1549,7 +1548,7 @@ function AdminArchetypesPage() {
         <section className="admin-panel">
           <h2>Existing groups</h2>
           {loading ? <p className="muted">Loading groups...</p> : null}
-          <div className="group-list">
+          <div className="group-list" ref={groupListRef}>
             {groups.map((group) => (
               <article className="group-card" key={group.id}>
                 <div className="group-card-head">
