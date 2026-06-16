@@ -1044,40 +1044,28 @@ function ReplayDetailPage() {
 
           <section className="table-section">
             <div className="section-head">
-              <h2>Action Timeline</h2>
+              <h2>Interactive Replay</h2>
               <button className="btn-ghost btn-sm" onClick={() => setShowActions((value) => !value)}>
-                {showActions ? "Hide" : "Show"} actions
+                {showActions ? "Hide" : "Show"} replay
               </button>
             </div>
             {showActions ? (
-              <div className="table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Play</th>
-                      <th>Player</th>
-                      <th>Card</th>
-                      <th>Message / Score</th>
-                      <th>Clock</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.actions.map((action) => (
-                      <tr key={action.sequence}>
-                        <td>{action.sequence}</td>
-                        <td>{action.play}</td>
-                        <td>{action.username ?? "n/a"}</td>
-                        <td>{action.cardName ?? "n/a"}</td>
-                        <td>{action.message ?? action.score ?? "n/a"}</td>
-                        <td>{action.seconds ?? "n/a"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="iframe-wrap" style={{ width: "100%", overflow: "hidden", borderRadius: "12px", border: "1px solid var(--border)", background: "#000", display: "flex", justifyContent: "center" }}>
+                {data.replayUrl ? (
+                  <iframe 
+                    src={data.replayUrl} 
+                    title="DuelingBook Replay"
+                    style={{ width: "100%", height: "800px", border: "none", maxWidth: "1200px" }}
+                    allowFullScreen
+                  />
+                ) : (
+                  <div style={{ padding: "100px 20px", textAlign: "center", color: "var(--text-3)" }}>
+                    <p>No interactive replay URL available for this duel.</p>
+                  </div>
+                )}
               </div>
             ) : (
-              <p className="muted" style={{ padding: "10px 0", fontSize: "0.9rem" }}>Timeline hidden. Expand to see move-by-move actions.</p>
+              <p className="muted" style={{ padding: "10px 0", fontSize: "0.9rem" }}>Replay hidden. Expand to watch the interactive duel.</p>
             )}
           </section>
         </>
