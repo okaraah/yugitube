@@ -1409,6 +1409,30 @@ function AdminArchetypesPage() {
     }
   }
 
+  async function toggleTrendingQuick(group: ArchetypeGroup) {
+    try {
+      setLoading(true);
+      await fetchJson(`/api/admin/archetype-groups/${group.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          name: group.name,
+          threshold: group.threshold,
+          enabled: group.enabled,
+          isTrending: !group.isTrending,
+          coverCardName: group.coverCardName || null,
+          cards: group.cards,
+        }),
+      });
+      if (form.id === String(group.id)) {
+        setForm(current => ({ ...current, isTrending: !group.isTrending }));
+      }
+      await loadAll();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setLoading(false);
+    }
+  }
+
   function toggleCard(name: string) {
     setForm((current) => {
       const exists = current.cards.includes(name);
@@ -1589,6 +1613,14 @@ function AdminArchetypesPage() {
                 </div>
                 <p className="group-cards">{group.cards.join(", ")}</p>
                 <div className="group-actions">
+                  <button 
+                    type="button" 
+                    onClick={() => toggleTrendingQuick(group)} 
+                    className="btn-ghost"
+                    style={{ color: group.isTrending ? "var(--accent)" : "inherit" }}
+                  >
+                    {group.isTrending ? "★ Trending" : "☆ Set Trending"}
+                  </button>
                   <button type="button" onClick={() => editGroup(group)} className="btn-ghost">
                     Edit
                   </button>
