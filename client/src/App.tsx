@@ -1258,6 +1258,7 @@ function AdminArchetypesPage() {
   const [groups, setGroups] = useState<ArchetypeGroup[]>([]);
   const [job, setJob] = useState<ReclassificationJob>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
@@ -1277,8 +1278,8 @@ function AdminArchetypesPage() {
 
   const isEditing = form.id.length > 0;
 
-  async function loadAll() {
-    setLoading(true);
+  async function loadAll(showLoading = true) {
+    if (showLoading) setLoading(true);
     setError(null);
     try {
       const [groupData, jobData] = await Promise.all([
@@ -1295,7 +1296,7 @@ function AdminArchetypesPage() {
       }
       setError(message);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }
 
@@ -1380,7 +1381,7 @@ function AdminArchetypesPage() {
     setError(null);
 
     try {
-      setLoading(true);
+      setSaving(true);
       const url = isEditing ? `/api/admin/archetype-groups/${form.id}` : "/api/admin/archetype-groups";
       const method = isEditing ? "PUT" : "POST";
       await fetchJson(url, {
@@ -1388,30 +1389,33 @@ function AdminArchetypesPage() {
         body: JSON.stringify(body),
       });
       resetForm();
-      await loadAll();
+      await loadAll(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-      setLoading(false);
+    } finally {
+      setSaving(false);
     }
   }
 
   async function deleteGroup(id: number) {
     try {
-      setLoading(true);
+      setSaving(true);
       await fetchJson(`/api/admin/archetype-groups/${id}`, { method: "DELETE" });
       if (form.id === String(id)) {
         resetForm();
       }
-      await loadAll();
+      await loadAll(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-      setLoading(false);
+    } finally {
+      setSaving(false);
     }
   }
 
   async function toggleTrendingQuick(group: ArchetypeGroup) {
+    // Optimistic update
+    setGroups(current => current.map(g => g.id === group.id ? { ...g, isTrending: !g.isTrending } : g));
     try {
-      setLoading(true);
       await fetchJson(`/api/admin/archetype-groups/${group.id}`, {
         method: "PUT",
         body: JSON.stringify({
@@ -1426,10 +1430,12 @@ function AdminArchetypesPage() {
       if (form.id === String(group.id)) {
         setForm(current => ({ ...current, isTrending: !group.isTrending }));
       }
-      await loadAll();
+      // Silent sync
+      await loadAll(false);
     } catch (err) {
+      // Revert on error
+      setGroups(current => current.map(g => g.id === group.id ? { ...g, isTrending: group.isTrending } : g));
       setError(err instanceof Error ? err.message : String(err));
-      setLoading(false);
     }
   }
 
@@ -1586,9 +1592,11 @@ function AdminArchetypesPage() {
             </label>
 
             <div className="editor-actions">
-              <button type="submit">{isEditing ? "Save changes" : "Create group"}</button>
+              <button type="submit" disabled={saving}>
+                {saving ? "Saving..." : isEditing ? "Save changes" : "Create group"}
+              </button>
               {isEditing ? (
-                <button type="button" className="btn-ghost" onClick={resetForm}>
+                <button type="button" className="btn-ghost" onClick={resetForm} disabled={saving}>
                   Cancel
                 </button>
               ) : null}
@@ -1612,15 +1620,15 @@ function AdminArchetypesPage() {
                   {group.coverImageCroppedPath ? <img src={group.coverImageCroppedPath} alt={group.name} className="group-cover" /> : null}
                 </div>
                 <p className="group-cards">{group.cards.join(", ")}</p>
-                <div className="group-actions">
-                  <button 
-                    type="button" 
-                    onClick={() => toggleTrendingQuick(group)} 
-                    className="btn-ghost"
-                    style={{ color: group.isTrending ? "var(--accent)" : "inherit" }}
-                  >
-                    {group.isTrending ? "★ Trending" : "☆ Set Trending"}
-                  </button>
+                <div className="group-actions" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <label className="checkbox-row" style={{ marginRight: "auto", fontSize: "0.85rem", cursor: "pointer", color: group.isTrending ? "var(--accent)" : "inherit" }}>
+                    <input 
+                      type="checkbox" 
+                      checked={group.isTrending} 
+                      onChange={() => toggleTrendingQuick(group)} 
+                    />
+                    Trending
+                  </label>
                   <button type="button" onClick={() => editGroup(group)} className="btn-ghost">
                     Edit
                   </button>
