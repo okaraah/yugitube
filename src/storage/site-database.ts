@@ -708,7 +708,7 @@ export class SiteDatabase {
 
   async listArchetypeGroups(): Promise<ArchetypeGroup[]> {
     const groupsRes = await this.pool.query(`
-        SELECT g.id, g.name, g.threshold, g.enabled, g.cover_card_name, g.updated_at
+        SELECT g.id, g.name, g.threshold, g.enabled, g.cover_card_name, g.updated_at, g.is_trending
         FROM archetype_groups g
         ORDER BY g.name ASC
       `);

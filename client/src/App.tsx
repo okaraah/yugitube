@@ -1511,7 +1511,7 @@ function AdminArchetypesPage() {
                   checked={form.isTrending}
                   onChange={(event) => setForm((current) => ({ ...current, isTrending: event.target.checked }))}
                 />
-                Trending filter
+                Highlighted filter
               </label>
             </div>
             <label>
@@ -1627,7 +1627,7 @@ function AdminArchetypesPage() {
                       checked={group.isTrending} 
                       onChange={() => toggleTrendingQuick(group)} 
                     />
-                    Trending
+                    Highlighted
                   </label>
                   <button type="button" onClick={() => editGroup(group)} className="btn-ghost">
                     Edit
